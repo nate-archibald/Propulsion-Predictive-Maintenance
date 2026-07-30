@@ -1,0 +1,935 @@
+{
+  "datasets": [
+    {
+      "name": "ds_reliability_kpis",
+      "displayName": "Reliability KPIs",
+      "queryLines": [
+        "SELECT\n",
+        "  COUNT(*) AS removal_count,\n",
+        "  AVG(f.hours_installed) AS avg_hours_at_removal,\n",
+        "  AVG(f.cycles_installed) AS avg_cycles_at_removal,\n",
+        "  COUNT(CASE WHEN f.schedule_category = 'Unscheduled' THEN 1 END) AS unscheduled_count\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_fact_component_removal f\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE d.calendar_date BETWEEN DATE_ADD(current_date(), -365) AND current_date()\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    },
+    {
+      "name": "ds_removal_trend_weekly",
+      "displayName": "Removal Trend Weekly",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('WEEK', d.calendar_date) AS week_start,\n",
+        "  COUNT(*) AS removal_count,\n",
+        "  COUNT(CASE WHEN f.schedule_category = 'Unscheduled' THEN 1 END) AS unscheduled_count,\n",
+        "  COUNT(CASE WHEN f.schedule_category = 'Scheduled' THEN 1 END) AS scheduled_count\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_fact_component_removal f\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE d.calendar_date BETWEEN DATE_ADD(current_date(), -365) AND current_date()\n",
+        "GROUP BY DATE_TRUNC('WEEK', d.calendar_date)\n",
+        "ORDER BY week_start\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    },
+    {
+      "name": "ds_mtbur_by_part",
+      "displayName": "MTBUR by Part Number",
+      "queryLines": [
+        "SELECT\n",
+        "  p.pn,\n",
+        "  COALESCE(p.pn_description, p.pn) AS part_name,\n",
+        "  AVG(f.hours_installed) AS mtbur_hours,\n",
+        "  COUNT(*) AS removal_count\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_fact_component_removal f\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part p ON f.dim_part_key = p.dim_part_key\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE d.calendar_date BETWEEN DATE_ADD(current_date(), -365) AND current_date()\n",
+        "  AND p.pn IS NOT NULL\n",
+        "GROUP BY p.pn, p.pn_description\n",
+        "ORDER BY mtbur_hours ASC\n",
+        "LIMIT 15\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    },
+    {
+      "name": "ds_removals_by_ata",
+      "displayName": "Removals by ATA Chapter",
+      "queryLines": [
+        "SELECT\n",
+        "  c.chapter_description,\n",
+        "  COUNT(*) AS removal_count,\n",
+        "  COUNT(CASE WHEN f.schedule_category = 'Unscheduled' THEN 1 END) AS unscheduled_count\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_fact_component_removal f\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE d.calendar_date BETWEEN DATE_ADD(current_date(), -365) AND current_date()\n",
+        "  AND c.chapter_description IS NOT NULL\n",
+        "GROUP BY c.chapter_description\n",
+        "ORDER BY removal_count DESC\n",
+        "LIMIT 10\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    },
+    {
+      "name": "ds_removals_by_station",
+      "displayName": "Removals by Station",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(s.station_name, s.station_code) AS station,\n",
+        "  COUNT(*) AS removal_count\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_fact_component_removal f\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_station s ON f.dim_station_key = s.dim_station_key\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE d.calendar_date BETWEEN DATE_ADD(current_date(), -365) AND current_date()\n",
+        "  AND s.station_code IS NOT NULL\n",
+        "GROUP BY s.station_name, s.station_code\n",
+        "ORDER BY removal_count DESC\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    },
+    {
+      "name": "ds_sched_unsched_trend",
+      "displayName": "Scheduled vs Unscheduled Trend",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date) AS month_start,\n",
+        "  f.schedule_category,\n",
+        "  COUNT(*) AS removal_count\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_fact_component_removal f\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE d.calendar_date BETWEEN DATE_ADD(current_date(), -365) AND current_date()\n",
+        "  AND f.schedule_category IS NOT NULL\n",
+        "GROUP BY DATE_TRUNC('MONTH', d.calendar_date), f.schedule_category\n",
+        "ORDER BY month_start\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    },
+    {
+      "name": "ds_reason_breakdown",
+      "displayName": "Reason Category Breakdown",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(f.reason_category, 'Unknown') AS reason_category,\n",
+        "  COUNT(*) AS removal_count\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_fact_component_removal f\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE d.calendar_date BETWEEN DATE_ADD(current_date(), -365) AND current_date()\n",
+        "GROUP BY f.reason_category\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    },
+    {
+      "name": "ds_removal_by_tail",
+      "displayName": "Removals by Aircraft Tail",
+      "queryLines": [
+        "SELECT\n",
+        "  a.ac AS aircraft,\n",
+        "  a.aircraft_type,\n",
+        "  COUNT(*) AS removal_count,\n",
+        "  COALESCE(AVG(f.hours_installed), 0) AS avg_hours\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_fact_component_removal f\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_aircraft a\n",
+        "  ON f.dim_aircraft_key = a.dim_aircraft_key\n",
+        "JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "  ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE d.calendar_date BETWEEN DATE_ADD(current_date(), -365) AND current_date()\n",
+        "GROUP BY a.ac, a.aircraft_type\n",
+        "ORDER BY removal_count DESC\n",
+        "LIMIT 10\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    },
+    {
+      "name": "ds_filter_part_numbers",
+      "displayName": "Filter Part Numbers",
+      "queryLines": [
+        "SELECT DISTINCT pn, COALESCE(pn_description, pn) AS pn_label\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part\n",
+        "WHERE pn IS NOT NULL\n",
+        "ORDER BY pn\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    },
+    {
+      "name": "ds_filter_stations",
+      "displayName": "Filter Stations",
+      "queryLines": [
+        "SELECT DISTINCT station_code\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_station\n",
+        "WHERE station_code IS NOT NULL\n",
+        "ORDER BY station_code\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    },
+    {
+      "name": "ds_filter_ata_chapters",
+      "displayName": "Filter ATA Chapters",
+      "queryLines": [
+        "SELECT DISTINCT chapter_description\n",
+        "FROM ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter\n",
+        "WHERE chapter_description IS NOT NULL\n",
+        "ORDER BY chapter_description\n"
+      ],
+      "catalog": "${catalog}",
+      "schema": "${gold_schema}"
+    }
+  ],
+  "pages": [
+    {
+      "name": "page_overview",
+      "displayName": "Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_removal_count",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability_kpis",
+                  "fields": [
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "removal_count",
+                  "displayName": "Total Removals"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Removals",
+                "showDescription": true,
+                "description": "Component removals in selected period"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_avg_hours",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability_kpis",
+                  "fields": [
+                    {
+                      "name": "avg_hours_at_removal",
+                      "expression": "`avg_hours_at_removal`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_hours_at_removal",
+                  "displayName": "Avg Hours at Removal"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Hours at Removal",
+                "showDescription": true,
+                "description": "Mean time between unscheduled removals proxy"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_unscheduled",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability_kpis",
+                  "fields": [
+                    {
+                      "name": "unscheduled_count",
+                      "expression": "`unscheduled_count`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "unscheduled_count",
+                  "displayName": "Unscheduled Removals"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Unscheduled Removals",
+                "showDescription": true,
+                "description": "Unscheduled component removals"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "chart_removal_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_removal_trend_weekly",
+                  "fields": [
+                    {
+                      "name": "week_start",
+                      "expression": "`week_start`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "week_start",
+                  "displayName": "Week",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "removal_count",
+                  "displayName": "Removals",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Removal Volume Trend (Weekly)",
+                "showDescription": true,
+                "description": "Weekly component removal count over time"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "chart_mtbur_by_part",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mtbur_by_part",
+                  "fields": [
+                    {
+                      "name": "part_name",
+                      "expression": "`part_name`"
+                    },
+                    {
+                      "name": "mtbur_hours",
+                      "expression": "`mtbur_hours`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "mtbur_hours",
+                  "displayName": "MTBUR (Hours)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "part_name",
+                  "displayName": "Part Number",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "MTBUR by Top Part Numbers",
+                "showDescription": true,
+                "description": "Top 15 P/Ns by lowest mean time between unscheduled removals"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "chart_removals_by_ata",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_removals_by_ata",
+                  "fields": [
+                    {
+                      "name": "chapter_description",
+                      "expression": "`chapter_description`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "removal_count",
+                  "displayName": "Removals",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "chapter_description",
+                  "displayName": "ATA Chapter",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Removals by ATA Chapter",
+                "showDescription": true,
+                "description": "Top 10 ATA chapters by removal count"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 8,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "chart_removals_by_station",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_removals_by_station",
+                  "fields": [
+                    {
+                      "name": "station",
+                      "expression": "`station`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "removal_count",
+                  "displayName": "Removals",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "station",
+                  "displayName": "Station",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Removals by Station",
+                "showDescription": true,
+                "description": "Component removals by maintenance station (last 90 days)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "chart_sched_unsched_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_sched_unsched_trend",
+                  "fields": [
+                    {
+                      "name": "month_start",
+                      "expression": "`month_start`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    },
+                    {
+                      "name": "schedule_category",
+                      "expression": "`schedule_category`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "area",
+              "encodings": {
+                "x": {
+                  "fieldName": "month_start",
+                  "displayName": "Month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "removal_count",
+                  "displayName": "Removals",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "stack": "zero"
+                },
+                "color": {
+                  "fieldName": "schedule_category",
+                  "displayName": "Category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Scheduled vs Unscheduled Ratio Trend",
+                "showDescription": true,
+                "description": "Monthly removal breakdown by schedule category"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 14,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "chart_reason_breakdown",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reason_breakdown",
+                  "fields": [
+                    {
+                      "name": "reason_category",
+                      "expression": "`reason_category`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "removal_count",
+                  "displayName": "Removals",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "reason_category",
+                  "displayName": "Reason Category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Removal Reason Breakdown",
+                "showDescription": true,
+                "description": "Distribution of removal reasons"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 20,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "table_removal_by_tail",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_removal_by_tail",
+                  "fields": [
+                    {
+                      "name": "aircraft",
+                      "expression": "`aircraft`"
+                    },
+                    {
+                      "name": "aircraft_type",
+                      "expression": "`aircraft_type`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    },
+                    {
+                      "name": "avg_hours",
+                      "expression": "`avg_hours`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "aircraft",
+                    "title": "Aircraft Tail"
+                  },
+                  {
+                    "fieldName": "aircraft_type",
+                    "title": "Type"
+                  },
+                  {
+                    "fieldName": "removal_count",
+                    "title": "Removals",
+                    "type": "number"
+                  },
+                  {
+                    "fieldName": "avg_hours",
+                    "title": "Avg Hours",
+                    "type": "number"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 Aircraft by Removals",
+                "showDescription": true,
+                "description": "Aircraft tails with highest removal counts"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 20,
+            "width": 3,
+            "height": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "page_global_filters",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layout": [
+        {
+          "widget": {
+            "name": "global_date_range",
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range",
+              "frame": {
+                "showTitle": true,
+                "title": "Date Range"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "global_part_filter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_filter_part_numbers",
+                  "fields": [
+                    {
+                      "name": "pn",
+                      "expression": "`pn`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "displayName": "Part Number",
+                    "fieldName": "pn",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Part Number"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "global_station_filter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_filter_stations",
+                  "fields": [
+                    {
+                      "name": "station_code",
+                      "expression": "`station_code`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "displayName": "Station",
+                    "fieldName": "station_code",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Station"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "global_ata_filter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_filter_ata_chapters",
+                  "fields": [
+                    {
+                      "name": "chapter_description",
+                      "expression": "`chapter_description`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "displayName": "ATA Chapter",
+                    "fieldName": "chapter_description",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "ATA Chapter"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {
+        "light": "#F7F9FA",
+        "dark": "#0B0E11"
+      },
+      "widgetBackgroundColor": {
+        "light": "#FFFFFF",
+        "dark": "#1A1D21"
+      },
+      "widgetBorderColor": {
+        "light": "#E0E4E8",
+        "dark": "#2A2E33"
+      },
+      "fontColor": {
+        "light": "#11171C",
+        "dark": "#E8ECF0"
+      },
+      "selectionColor": {
+        "light": "#077A9D",
+        "dark": "#8ACAE7"
+      },
+      "visualizationColors": [
+        "#077A9D",
+        "#00A972",
+        "#FFAB00",
+        "#FF3621",
+        "#8BCAE7",
+        "#99DDB4",
+        "#FCA4A1",
+        "#AB4057",
+        "#6B4FBB",
+        "#BF7080"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    },
+    "genieSpace": {
+      "isEnabled": false
+    }
+  }
+}

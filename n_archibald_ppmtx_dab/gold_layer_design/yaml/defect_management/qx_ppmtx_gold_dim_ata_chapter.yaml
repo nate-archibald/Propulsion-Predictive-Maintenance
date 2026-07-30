@@ -1,0 +1,78 @@
+table_name: qx_ppmtx_gold_dim_ata_chapter
+entity_type: dimension
+domain: defect_management
+scd_type: 1
+business_key: ["chapter", "section", "paragraph"]
+description: "ATA chapter hierarchy dimension for propulsion maintenance categorization. Business: the ATA 100 standard chapter, section, and paragraph codes used to classify defects and maintenance actions by aircraft system (scope limited to chapters 49, 70-80 for propulsion). Technical: SCD Type 1 dimension derived from distinct chapter/section/paragraph combinations in Silver defect and transaction tables."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "defect_management"
+  entity_type: "dimension"
+  scd_type: "1"
+
+unknown_member:
+  dim_ata_chapter_key: -1
+  chapter: -1
+  section: -1
+  paragraph: -1
+  chapter_description: "Unknown ATA Chapter"
+
+primary_key: ["dim_ata_chapter_key"]
+
+columns:
+  - name: dim_ata_chapter_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for the ATA chapter dimension. Business: system-generated unique identifier for each ATA chapter/section/paragraph combination. Technical: generated via hash of composite business key."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: chapter
+      transformation: GENERATED
+      transformation_logic: "ROW_NUMBER() OVER (ORDER BY chapter, section, paragraph)"
+
+  - name: chapter
+    data_type: DECIMAL
+    nullable: false
+    description: "ATA chapter number. Business: top-level aircraft system classification per ATA 100 standard (e.g., 49=APU, 72=Engine, 73=Engine Fuel, 74=Ignition). Technical: numeric code from Silver defect and transaction tables."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: chapter
+      transformation: DIRECT_COPY
+      transformation_logic: "chapter"
+
+  - name: section
+    data_type: DECIMAL
+    nullable: false
+    description: "ATA section number. Business: sub-system classification within a chapter (e.g., 73-21 = Fuel Control/Governing). Technical: numeric code from Silver tables, combined with chapter for drill-down."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: section
+      transformation: DIRECT_COPY
+      transformation_logic: "section"
+
+  - name: paragraph
+    data_type: DECIMAL
+    nullable: false
+    description: "ATA paragraph number. Business: most granular maintenance classification within a section. Technical: numeric code from Silver tables."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: paragraph
+      transformation: DIRECT_COPY
+      transformation_logic: "paragraph"
+
+  - name: chapter_description
+    data_type: STRING
+    nullable: true
+    description: "ATA chapter descriptive name. Business: human-readable name for the ATA system (e.g., Power Plant, Engine Fuel and Control, APU). Technical: derived from ATA 100 reference standard via lookup mapping."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: chapter
+      transformation: DERIVED_CONDITIONAL
+      transformation_logic: "CASE chapter WHEN 49 THEN 'Auxiliary Power Unit' WHEN 70 THEN 'Standard Practices - Engine' WHEN 71 THEN 'Power Plant' WHEN 72 THEN 'Engine' WHEN 73 THEN 'Engine Fuel and Control' WHEN 74 THEN 'Ignition' WHEN 75 THEN 'Air' WHEN 76 THEN 'Engine Controls' WHEN 77 THEN 'Engine Indicating' WHEN 78 THEN 'Exhaust' WHEN 79 THEN 'Oil' WHEN 80 THEN 'Starting' END"

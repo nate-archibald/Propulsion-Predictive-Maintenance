@@ -1,0 +1,18 @@
+bundle:
+  name: nathan-a-qx-predictive
+
+resources:
+  apps:
+    app:
+      name: "nathan-a-qx-predictive"
+      description: "QX Propulsion Predictive Maintenance app"
+      source_code_path: ./
+      # Uncomment to enable on behalf of user API scopes. Available scopes: sql, dashboards.genie, files.files, serving.serving-endpoints
+      # user_api_scopes:
+      #   - sql
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: https://adb-4231201731504057.17.azuredatabricks.net

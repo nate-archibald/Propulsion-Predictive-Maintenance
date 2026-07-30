@@ -1,0 +1,56 @@
+table_name: qx_ppmtx_gold_dim_aircraft
+entity_type: dimension
+domain: component_lifecycle
+scd_type: 1
+business_key: ["ac"]
+description: "Aircraft registration dimension for the Horizon Air E175 fleet. Business: identifies each aircraft tail number enabling fleet-wide trending, engine genealogy, and tail-specific defect analysis. Technical: SCD Type 1 dimension derived from distinct ac values across Silver transaction and defect tables."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "component_lifecycle"
+  entity_type: "dimension"
+  scd_type: "1"
+
+unknown_member:
+  dim_aircraft_key: -1
+  ac: "UNKNOWN"
+  aircraft_type: "Unknown"
+
+primary_key: ["dim_aircraft_key"]
+
+columns:
+  - name: dim_aircraft_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for the aircraft dimension. Business: system-generated unique identifier for each aircraft record. Technical: generated via hash or sequence of business key."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: ac
+      transformation: GENERATED
+      transformation_logic: "ROW_NUMBER() OVER (ORDER BY ac)"
+
+  - name: ac
+    data_type: STRING
+    nullable: false
+    description: "Aircraft registration number. Business: the tail number identifying a specific Horizon Air E175 aircraft (e.g., 628QX, N193QX). Technical: natural key extracted as distinct values from Silver transaction and defect tables."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: ac
+      transformation: DIRECT_COPY
+      transformation_logic: "DISTINCT ac FROM qx_ppmtx_ac_pn_transaction_history UNION DISTINCT ac FROM qx_ppmtx_defect_report"
+
+  - name: aircraft_type
+    data_type: STRING
+    nullable: true
+    description: "Aircraft type designation. Business: the aircraft model type for fleet segmentation (all E175 for current Horizon fleet). Technical: defaulted to E175 for current fleet, extensible for future fleet additions."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: null
+      transformation: GENERATED
+      transformation_logic: "'E175'"

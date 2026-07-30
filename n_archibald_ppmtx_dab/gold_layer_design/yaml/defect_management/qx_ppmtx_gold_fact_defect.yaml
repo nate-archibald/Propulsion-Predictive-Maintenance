@@ -1,0 +1,292 @@
+table_name: qx_ppmtx_gold_fact_defect
+entity_type: fact
+domain: defect_management
+grain: "One row per defect event, identified by (defect_type, defect, defect_item)"
+update_frequency: hourly
+fact_type: transaction
+description: "Aircraft defect report fact capturing maintenance events with operational impact. Business: enables defect trending by ATA chapter, operational impact attribution (delays, cancellations), deferral tracking, and the primary predictive signal for propulsion reliability. Supports MOC dispatch decisions and monthly reliability board reporting. Technical: transaction fact sourced from Silver qx_ppmtx_defect_report with surrogate key joins to dim_aircraft, dim_ata_chapter, and dim_date."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "defect_management"
+  entity_type: "fact"
+  grain: "defect_type + defect + defect_item"
+  fact_type: "transaction"
+
+primary_key: ["fact_defect_key"]
+
+foreign_keys:
+  - columns: ["dim_aircraft_key"]
+    references: qx_ppmtx_gold_dim_aircraft(dim_aircraft_key)
+    nullable: true
+  - columns: ["dim_ata_chapter_key"]
+    references: qx_ppmtx_gold_dim_ata_chapter(dim_ata_chapter_key)
+    nullable: true
+  - columns: ["reported_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+  - columns: ["resolved_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+
+measures:
+  - delays_hours
+  - delay_minutes
+  - fuel
+
+columns:
+  - name: fact_defect_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for defect fact. Business: unique identifier for each defect event. Technical: generated via hash of (defect_type, defect, defect_item)."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: defect
+      transformation: GENERATED
+      transformation_logic: "HASH(defect_type, defect, defect_item)"
+
+  - name: dim_aircraft_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to aircraft dimension. Business: identifies the aircraft where this defect was reported. Technical: lookup join on ac to dim_aircraft."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: ac
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_aircraft ON ac = dim_aircraft.ac"
+
+  - name: dim_ata_chapter_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to ATA chapter dimension. Business: classifies the defect by aircraft system. Technical: lookup join on (chapter, section, paragraph) to dim_ata_chapter."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: chapter
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_ata_chapter ON (chapter, section, paragraph)"
+
+  - name: reported_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for defect reported date. Business: when the defect was first reported. Technical: CAST(date_format(reported_date, 'yyyyMMdd') AS INT)."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: reported_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(reported_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: resolved_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for defect resolution date. Business: when the defect was resolved or closed. Technical: CAST(date_format(resolved_date, 'yyyyMMdd') AS INT)."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: resolved_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(resolved_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: defect_type
+    data_type: STRING
+    nullable: false
+    description: "Defect type code. Business: classification of the defect source (e.g., PIREP, MIREP, Cabin Log). Technical: degenerate dimension, part of grain composite key."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: defect_type
+      transformation: DIRECT_COPY
+      transformation_logic: "defect_type"
+
+  - name: defect
+    data_type: STRING
+    nullable: false
+    description: "Defect number. Business: unique defect identifier within a defect type. Technical: degenerate dimension, part of grain composite key."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: defect
+      transformation: DIRECT_COPY
+      transformation_logic: "defect"
+
+  - name: defect_item
+    data_type: DECIMAL
+    nullable: false
+    description: "Defect line item number. Business: line sequence for multi-item defects. Technical: degenerate dimension, part of grain composite key."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: defect_item
+      transformation: DIRECT_COPY
+      transformation_logic: "defect_item"
+
+  - name: status
+    data_type: STRING
+    nullable: true
+    description: "Defect status. Business: current state of the defect (Open, Deferred, Closed). Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: status
+      transformation: DIRECT_COPY
+      transformation_logic: "status"
+
+  - name: defect_description
+    data_type: STRING
+    nullable: true
+    description: "Defect narrative description. Business: free-text description of what was observed, critical for Genie natural language search. Technical: text attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: defect_description
+      transformation: DIRECT_COPY
+      transformation_logic: "defect_description"
+
+  - name: defect_category
+    data_type: STRING
+    nullable: true
+    description: "Defect category classification. Business: standardized categorization for reporting and trending. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: defect_category
+      transformation: DIRECT_COPY
+      transformation_logic: "defect_category"
+
+  - name: resolution_description
+    data_type: STRING
+    nullable: true
+    description: "Resolution narrative. Business: what maintenance action was taken to resolve the defect. Technical: text attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: resolution_description
+      transformation: DIRECT_COPY
+      transformation_logic: "resolution_description"
+
+  - name: resolution_category
+    data_type: STRING
+    nullable: true
+    description: "Resolution category. Business: standardized resolution type for resolution effectiveness analysis. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: resolution_category
+      transformation: DIRECT_COPY
+      transformation_logic: "resolution_category"
+
+  - name: delay
+    data_type: STRING
+    nullable: true
+    description: "Delay flag. Business: indicates whether this defect caused a flight delay. Technical: Y/N flag from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: delay
+      transformation: DIRECT_COPY
+      transformation_logic: "delay"
+
+  - name: delays_hours
+    data_type: DECIMAL
+    nullable: true
+    description: "Delay duration in hours. Business: flight delay hours attributed to this defect for operational impact ranking. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: delays_hours
+      transformation: DIRECT_COPY
+      transformation_logic: "delays_hours"
+
+  - name: delay_minutes
+    data_type: DECIMAL
+    nullable: true
+    description: "Delay duration in minutes. Business: flight delay minutes for granular impact attribution and top-10 ranking. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: delay_minutes
+      transformation: DIRECT_COPY
+      transformation_logic: "delay_minutes"
+
+  - name: cancellation
+    data_type: STRING
+    nullable: true
+    description: "Flight cancellation flag. Business: indicates whether this defect caused a flight cancellation, a key CPA economics metric. Technical: Y/N flag from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: cancellation
+      transformation: DIRECT_COPY
+      transformation_logic: "cancellation"
+
+  - name: i_f_s_d
+    data_type: STRING
+    nullable: true
+    description: "In-Flight Shut Down indicator. Business: critical safety event flag indicating an engine was shut down in flight. Technical: flag from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: i_f_s_d
+      transformation: DIRECT_COPY
+      transformation_logic: "i_f_s_d"
+
+  - name: fuel
+    data_type: DECIMAL
+    nullable: true
+    description: "Fuel quantity at time of event. Business: fuel level context for defect occurrence analysis. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: fuel
+      transformation: DIRECT_COPY
+      transformation_logic: "fuel"
+
+  - name: mel
+    data_type: STRING
+    nullable: true
+    description: "MEL applicability flag. Business: indicates if defect was deferred under Minimum Equipment List provisions. Technical: flag from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: mel
+      transformation: DIRECT_COPY
+      transformation_logic: "mel"
+
+  - name: mel_number
+    data_type: STRING
+    nullable: true
+    description: "MEL item number. Business: specific MEL reference for deferral compliance tracking. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: mel_number
+      transformation: DIRECT_COPY
+      transformation_logic: "mel_number"
+
+  - name: defer
+    data_type: STRING
+    nullable: true
+    description: "Deferral flag. Business: indicates this defect was deferred rather than immediately resolved. Technical: flag from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: defer
+      transformation: DIRECT_COPY
+      transformation_logic: "defer"
+
+  - name: fault_confirm
+    data_type: STRING
+    nullable: true
+    description: "Fault confirmed flag. Business: indicates whether the reported fault was confirmed during maintenance investigation. Technical: flag from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: fault_confirm
+      transformation: DIRECT_COPY
+      transformation_logic: "fault_confirm"
+
+  - name: wo
+    data_type: DECIMAL
+    nullable: true
+    description: "Work order number. Business: the maintenance work order opened to address this defect. Technical: degenerate dimension from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: wo
+      transformation: DIRECT_COPY
+      transformation_logic: "wo"
+
+  - name: flight
+    data_type: STRING
+    nullable: true
+    description: "Flight number. Business: the flight during which the defect was observed. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report
+      silver_column: flight
+      transformation: DIRECT_COPY
+      transformation_logic: "flight"

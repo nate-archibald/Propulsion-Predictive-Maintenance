@@ -1,0 +1,344 @@
+# Genie Space Configuration Template
+# Use this template to structure your Genie Space setup document
+
+# Section A: Space Name
+space_name: "{Project} {Domain} Analytics Space"
+# Example: "RetailChain Revenue Analytics Space"
+
+# Section B: Space Description
+space_description: |
+  This Genie Space enables natural language analytics for {domain} data,
+  providing {users} with instant insights into {key metrics}.
+  Users can ask questions about {topics} and get accurate,
+  business-contextualized answers powered by {data sources}.
+
+# Section C: Sample Questions
+sample_questions:
+  revenue_analytics:
+    - "What are the top 10 stores by revenue this month?"
+    - "How much revenue did we generate last quarter?"
+    - "Which product categories have the highest revenue?"
+    - "Show me revenue trends over the last 6 months."
+  
+  performance_analysis:
+    - "Which properties are underperforming this year?"
+    - "What are the top 5 hosts by booking count?"
+    - "Show me customer segments with highest lifetime value."
+    - "Which markets have the best conversion rates?"
+  
+  trend_analysis:
+    - "How has revenue changed month-over-month?"
+    - "What are the seasonal booking patterns?"
+    - "Show me customer acquisition trends."
+    - "How do weekends compare to weekdays for bookings?"
+  
+  comparative_analysis:
+    - "Compare revenue across different regions."
+    - "How does this quarter compare to last quarter?"
+    - "Show me the difference between top and bottom performers."
+
+# Section D: Data Assets
+data_assets:
+  metric_views:
+    - name: "{metric_view_name}"
+      description: "{Description of measures and dimensions}"
+      use_cases:
+        - "{Use case 1}"
+        - "{Use case 2}"
+      measures:
+        - "{measure_name}"
+      dimensions:
+        - "{dimension_name}"
+  
+  table_valued_functions:
+    - name: "{tvf_name}"
+      signature: "{tvf_name}(param1 TYPE, param2 TYPE)"
+      description: "{What the TVF does}"
+      use_cases:
+        - "{Use case 1}"
+        - "{Use case 2}"
+      example: |
+        SELECT * FROM ${catalog}.${gold_schema}.{tvf_name}('param1_value', 'param2_value');
+  
+  tables:
+    - name: "{table_name}"
+      description: "{Purpose and when to use}"
+      use_cases:
+        - "{Use case 1}"
+
+# Section E: General Instructions (≤20 LINES - CRITICAL LIMIT)
+general_instructions: |
+  You are an expert {domain} analyst. Follow these rules:
+  
+  1. **Primary Data Source:** Always use Metric Views first
+  2. **Use TVFs:** For common queries, prefer Table-Valued Functions
+  3. **Date Defaults:** If no date specified, default to last 30 days
+  4. **Aggregations:** Use SUM for totals, AVG for averages
+  5. **Sorting:** Sort by primary metric DESC unless specified
+  6. **Limits:** Return top 10-20 rows for ranking queries
+  7. **Currency:** Format as USD with 2 decimal places
+  8. **Percentages:** Show as % with 1 decimal place
+  9. **Synonyms:** Handle common term equivalents
+  10. **Context:** Explain results in business terms
+  11. **Comparisons:** Show absolute values and % difference
+  12. **Time Periods:** Support today, yesterday, last week, month, quarter, YTD
+  13. **Null Handling:** Exclude nulls from calculations
+  14. **Performance:** Never scan raw Bronze/Silver tables
+  15. **Accuracy:** State assumptions when uncertain
+
+# Section E.2: Extended Instructions (13-Section Structure)
+# Goes into text_instructions in the Genie Space JSON or appended to General Instructions.
+# See references/agent-instructions.md for the full template.
+extended_instructions:
+  sections:
+    - name: "PURPOSE"
+      content: |
+        You are an expert {domain} analyst for the {report/system name}.
+        Core KPI: {name} = {formula}.
+        Default filter: {filter_column} = '{value}' for all {kpi} queries.
+    
+    - name: "ASSET ROUTING"
+      content: |
+        | User Intent | Asset | Notes |
+        |---|---|---|
+        | Dimension-only lookups | {dim_table} | No MEASURE() |
+        | Pre-aggregated KPIs | {metric_view} with MEASURE() | Primary asset |
+        | Ad-hoc drill-downs | {fact} + {dims} via JOIN | Use JOIN per Section 7 |
+    
+    - name: "BUSINESS DEFINITIONS"
+      content: |
+        - {KPI_1}: {formula} — {explanation}
+        - Hierarchy: {Level1} > {Level2} > ... > {LevelN}
+        - "MTD" = month-to-date, "PY" = prior year same period
+    
+    - name: "DISAMBIGUATION"
+      content: |
+        | User says | Default column | Reason | Alternative |
+        |---|---|---|---|
+        | "by {grouping}" | {grouping}_combination | Richer context | {grouping}_name |
+    
+    - name: "AGGREGATION RULES"
+      content: |
+        - Default denominator: COUNT(DISTINCT {store-day key})
+        - Default filter: WHERE {same_store_flag} = 'Y'
+        - Use NULLIF({denominator}, 0) on all divisions
+    
+    - name: "FUNCTION ROUTING"
+      content: |
+        - MEASURE({column_name}) for metric views (actual column names, NOT display_name)
+        - Raw SUM()/AVG() for fact table joins
+    
+    - name: "JOIN GUIDANCE"
+      content: |
+        | Left | Right | Key | Cardinality |
+        |---|---|---|---|
+        | {fact} | {dim_date} | {fk} = {pk} | Many-to-One |
+    
+    - name: "QUERY RULES"
+      content: |
+        - Full 3-part UC namespace: {catalog}.{schema}.{object}
+        - Show CY and PY values plus % change for YoY
+        - No WHERE col IS NOT NULL on dimension-only lookups
+    
+    - name: "QUERY PATTERNS"
+      content: |
+        Pattern A — Day + MTD side-by-side (UNION ALL)
+        Pattern B — CY vs PY comparison (UNION ALL)
+        Pattern C — Hierarchy drill-down (multi-level GROUP BY)
+    
+    - name: "TEMPORAL FILTERS"
+      content: |
+        | User says | Filter column | Value |
+        |---|---|---|
+        | "today" | {is_current_day} | 'Y' |
+        | "MTD" | {is_mtd} | 'Y' |
+    
+    - name: "DATA QUALITY NOTES"
+      content: |
+        - Only {qualifying subset} records in {dim_table}
+        - {Column} is NULL for {condition} records
+    
+    - name: "CONSTRAINTS"
+      content: |
+        - Always use full 3-part UC namespace
+        - Only Gold layer assets as trusted data
+        - {Domain-specific hard rules}
+    
+    - name: "SQL EXPRESSIONS"
+      content: |
+        Register top KPIs, common filters, and key dimensions as sql_snippets.
+        See Section H below for structured definitions.
+
+# Column Configs for Data Assets
+# Each trusted asset table should have column_configs with appropriate flags.
+# Maintain these in a Python enrichment script for spaces with 50+ columns.
+column_configs_guidance:
+  flag_pattern:
+    date_timestamp: { enable_format_assistance: true, get_example_values: true }
+    numeric_id: { enable_format_assistance: true, get_example_values: true }
+    text_name: { enable_format_assistance: true, enable_entity_matching: true, get_example_values: true, build_value_dictionary: true }
+    categorical_flag: { enable_format_assistance: true, enable_entity_matching: true, get_example_values: true, build_value_dictionary: true }
+    code: { enable_format_assistance: true, get_example_values: true }
+    numeric_measure: {}  # No flags needed
+    percentage: {}  # No flags needed
+  synonym_placement: "column_configs[].synonyms in Genie JSON or metric view YAML — NEVER in UC COMMENTs"
+
+# Section H: SQL Expressions
+# Structured business concept definitions for Genie's sql_snippets.
+# SQL Expressions complement text instructions — they give Genie parseable,
+# matchable definitions for KPIs, filters, and grouping attributes.
+#
+# WORKFLOW: Write business definitions in text instructions first (Section E.2),
+# then "promote" the top concepts here for structured Genie matching.
+#
+# UI terminology → JSON key:  Measure → measures, Filter → filters, Dimension → expressions
+sql_expressions:
+  measures:
+    # Top KPIs that users ask about frequently (promote from BUSINESS DEFINITIONS)
+    - display_name: "{KPI Name}"
+      sql: "SUM(${catalog}.${gold_schema}.{table}.{column})"
+      instruction: "Use for {description of when to apply}."
+      synonyms:
+        - "{synonym1}"
+        - "{synonym2}"
+    - display_name: "{KPI Name 2}"
+      sql: "AVG(${catalog}.${gold_schema}.{table}.{column}) / NULLIF(COUNT(...), 0)"
+      instruction: "Use for {description}."
+      synonyms:
+        - "{synonym1}"
+        - "{synonym2}"
+
+  filters:
+    # Common WHERE clauses appearing in 3+ benchmark queries (promote from AGGREGATION RULES)
+    - display_name: "{Filter Name}"
+      sql: "${catalog}.${gold_schema}.{table}.{column} = '{value}'"
+      instruction: "Apply when the user asks about {condition description}."
+      synonyms:
+        - "{synonym1}"
+        - "{synonym2}"
+
+  dimensions:
+    # Key grouping attributes with synonyms (promote from DISAMBIGUATION)
+    # NOTE: Dimensions map to the "expressions" key in the API JSON
+    - display_name: "{Dimension Name}"
+      sql: "${catalog}.${gold_schema}.{table}.{column}"
+      instruction: "Use as a grouping dimension when the user asks for data by {grouping}."
+      synonyms:
+        - "{synonym1}"
+        - "{synonym2}"
+    - display_name: "{Derived Dimension Name}"
+      sql: "CASE WHEN ${catalog}.${gold_schema}.{table}.{column} = '{value}' THEN '{label1}' ELSE '{label2}' END"
+      instruction: "Use when the user asks to compare {category1} vs {category2}."
+      synonyms:
+        - "{synonym1}"
+        - "{synonym2}"
+
+# Section F: TVFs
+tvfs:
+  - name: "{tvf_name}"
+    signature: "{tvf_name}(param1 STRING, param2 STRING, param3 STRING)"
+    returns: |
+      - column1 TYPE
+      - column2 TYPE
+    use_cases:
+      - "{Use case 1}"
+      - "{Use case 2}"
+    examples:
+      - description: "{Example description}"
+        sql: |
+          SELECT * FROM ${catalog}.${gold_schema}.{tvf_name}('param1', 'param2', 'param3');
+
+# Section G: Benchmark Questions
+# INTAKE WORKFLOW: Always prompt the user for benchmark questions first.
+#   - If user provides 10+: validate each, report issues, proceed with valid set
+#   - If user provides 1-9: validate, report issues, augment with synthetic to 10-15
+#   - If user provides none: generate 10-15 synthetic from asset metadata, show for review
+# See references/benchmark-intake-workflow.md for full validation pipeline.
+benchmark_questions:
+  source: "user|synthetic|augmented"  # Track how benchmarks were obtained
+  user_submitted:
+    # Questions provided by the user (always preserved as-is)
+    - question: "{User's natural language question}"
+      expected_sql: "{SQL if user provided, or generate after validation}"
+      expected_asset: "MV|TVF|TABLE"
+      category: "aggregation|ranking|time-series|comparison|list"
+      validation_status: "valid|needs_info|invalid"
+  synthetic_additions:
+    # Questions generated from asset metadata to fill gaps
+    - question: "{Synthetic question from MV measure/TVF signature}"
+      expected_sql: |
+        SELECT 
+          {columns}
+        FROM ${catalog}.${gold_schema}.{metric_view}
+        WHERE {conditions}
+        GROUP BY {dimensions}
+        ORDER BY MEASURE({metric}) DESC
+        LIMIT {n};
+      expected_asset: "MV|TVF|TABLE"
+      category: "aggregation|ranking|time-series|comparison|list"
+      source: "synthetic"
+  combined_suite:
+    # Final validated set (user + synthetic, 10-15 questions, 4+ categories)
+    - question: "{Natural language question}"
+      expected_sql: |
+        SELECT {columns} FROM ${catalog}.${gold_schema}.{object} WHERE {conditions};
+      expected_result: "{Description of expected output}"
+
+# Deployment Configuration
+deployment:
+  catalog: "{catalog_name}"
+  schema: "{gold_schema_name}"
+  workspace: "{workspace_url}"
+
+# Testing Checklist
+testing:
+  pre_deployment:
+    - "All 8 sections complete (A through H)"
+    - "General Instructions ≤20 lines"
+    - "Every benchmark question has working SQL"
+    - "SQL tested and runs successfully"
+    - "MEASURE() uses actual column names"
+    - "All tables/functions use full UC namespace"
+    - "No contradictory routing rules"
+    - "Ambiguous terms explicitly defined"
+    - "Extended Instructions follow 13-section structure (PURPOSE through SQL EXPRESSIONS)"
+    - "DISAMBIGUATION section resolves ambiguous columns"
+    - "Column configs include enable_format_assistance / enable_entity_matching flags"
+    - "Synonyms in column_configs or metric view YAML — NOT in UC COMMENTs"
+    - "Instruction updates appended, not replaced (unless full migration)"
+    - "SQL Expressions reference only trusted asset tables"
+    - "Measures use aggregation functions, filters evaluate to boolean, dimensions have no aggregation"
+    - "Each SQL Expression has display_name, instruction, and 2-5 synonyms"
+    - "Serverless SQL Warehouse assigned"
+    - "ALL trusted asset tables have TABLE and COLUMN comments"
+    - "Table schemas inspected before space creation"
+    - "Only Gold layer assets used as trusted data"
+  
+  post_deployment:
+    - "Test all benchmark questions"
+    - "Verify Genie routes correctly"
+    - "Check response quality and formatting"
+    - "Validate business context in responses"
+    - "Monitor for routing issues"
+
+# Success Metrics
+success_metrics:
+  adoption:
+    - "Active users per week"
+    - "Questions asked per day"
+    - "Unique questions (not repeated)"
+  
+  quality:
+    - "Query success rate (target: 90%+)"
+    - "Average response time (target: < 10 sec)"
+    - "User satisfaction rating (target: 4.5/5)"
+  
+  usage_patterns:
+    - "Most asked questions"
+    - "Most used metric views"
+    - "Peak usage times"
+  
+  business_impact:
+    - "Time saved vs traditional dashboards"
+    - "Ad-hoc SQL requests reduction"
+    - "Decisions made faster"

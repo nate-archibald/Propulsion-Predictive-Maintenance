@@ -1,0 +1,1 @@
+{"warehouse_id":"600d6ad41356867b","statement":"SELECT table_name FROM subject_maintenanceengineering_test.information_schema.tables WHERE table_schema='an_maintenanceengineering_ods' AND table_name LIKE 'qx_ppmtx_gold_%' ORDER BY table_name","wait_timeout":"30s"}

@@ -1,0 +1,36 @@
+bundle:
+  name: n_archibald_ppmtx_dab
+
+variables:
+  user_prefix:
+    default: qx_ppmtx
+  catalog:
+    default: subject_maintenanceengineering_test
+  silver_schema:
+    default: an_maintenanceengineering_ods
+  bronze_catalog:
+    default: subject_maintenanceengineering
+  bronze_schema:
+    default: ds_maintenanceengineering_ods
+  warehouse_id:
+    description: "Serverless SQL Warehouse ID for Genie Spaces"
+    default: "600d6ad41356867b"
+
+include:
+  - resources/silver/*.yml
+  - resources/gold/*.yml
+  - resources/semantic/*.yml
+
+sync:
+  include:
+    - gold_layer_design/yaml/**/*.yaml
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://adb-620317033646362.2.azuredatabricks.net
+      profile: adb-620317033646362
+    presets:
+      source_linked_deployment: false

@@ -1,0 +1,143 @@
+{
+  "version": 2,
+  "spaces": [
+    {
+      "title": "Propulsion Reliability Intelligence",
+      "description": "Natural language analytics for Horizon Air E175 propulsion component lifecycle, reliability, and defect intelligence. Covers MTBUR analysis, removal trending, defect hotspot detection, operational impact tracking (delays, cancellations, IFSDs), and defect-to-part tracing.",
+      "warehouse_id": "${warehouse_id}",
+      "data_sources": {
+        "tables": [
+          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part"},
+          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_aircraft"},
+          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter"},
+          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date"},
+          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_component_removal"},
+          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_defect"},
+          {"identifier": "${catalog}.${gold_schema}.vw_prop_bridge_defect_part"}
+        ],
+        "metric_views": [
+          {"identifier": "${catalog}.${gold_schema}.component_lifecycle_analytics_metrics"},
+          {"identifier": "${catalog}.${gold_schema}.defect_intelligence_analytics_metrics"}
+        ]
+      },
+      "config": {
+        "sample_questions": [
+          {"id": "sq01", "question": ["What are the top 5 ATA sections by defect volume this month?"]},
+          {"id": "sq02", "question": ["Show MTBUR for all HPT parts over the last 24 months"]},
+          {"id": "sq03", "question": ["Which tails have the most unscheduled removals in Q2?"]},
+          {"id": "sq04", "question": ["Trace all parts linked to defect 12345"]},
+          {"id": "sq05", "question": ["What is the delay impact trend for ATA 73 week over week?"]}
+        ]
+      },
+      "instructions": {
+        "text_instructions": [
+          {"id": "ti01", "content": ["You are the Propulsion Reliability Intelligence assistant for Horizon Air's E175 fleet (CF34-8E engines / APS2300 APU)."]},
+          {"id": "ti02", "content": ["ATA chapters in scope: 49 (APU), 70-80 (Power Plant series). Data is pre-filtered to propulsion only."]},
+          {"id": "ti03", "content": ["For aggregate metrics (removal counts, averages, trends), use Metric Views: component_lifecycle_analytics_metrics or defect_intelligence_analytics_metrics with MEASURE()."]},
+          {"id": "ti04", "content": ["For parameterized queries (specific P/N, date range, station, top-N), use TVFs: get_component_removal_history, get_mtbur_analysis, get_time_on_wing_distribution, get_defect_trending_by_ata, get_operational_impact_summary, get_defect_part_linkage."]},
+          {"id": "ti05", "content": ["TERMINOLOGY: 'tail'/'tail number' = ac column; 'P/N' = part number (pn); 'S/N' = serial number; 'TSI' = Time Since Install (hours_installed/cycles_installed); 'MTBUR' = Mean Time Between Unscheduled Removals."]},
+          {"id": "ti06", "content": ["TERMINOLOGY: 'IFSD' = In-Flight Shut Down (i_f_s_d='Y'); 'MEL' = Minimum Equipment List deferral (mel='Y'); 'CPA' = Capacity Purchase Agreement (delays/cancels have direct $ impact)."]},
+          {"id": "ti07", "content": ["When asked about 'removal history' or 'what was removed', use get_component_removal_history TVF."]},
+          {"id": "ti08", "content": ["When asked about 'MTBUR' or 'reliability', use get_mtbur_analysis TVF with schedule_filter='UNSCHEDULED'."]},
+          {"id": "ti09", "content": ["When asked about 'top N by delays' or 'operational impact', use get_operational_impact_summary TVF."]},
+          {"id": "ti10", "content": ["When asked to 'trace' a defect to parts or vice versa, use get_defect_part_linkage TVF."]},
+          {"id": "ti11", "content": ["Default date range: last 12 months if user does not specify. TVF date params are STRING format 'YYYY-MM-DD'."]},
+          {"id": "ti12", "content": ["ALWAYS state assumptions about date ranges, ATA scope, and filters explicitly in your response."]}
+        ],
+        "sql_functions": [
+          {"id": "sf01", "identifier": "${catalog}.${gold_schema}.get_component_removal_history"},
+          {"id": "sf02", "identifier": "${catalog}.${gold_schema}.get_mtbur_analysis"},
+          {"id": "sf03", "identifier": "${catalog}.${gold_schema}.get_time_on_wing_distribution"},
+          {"id": "sf04", "identifier": "${catalog}.${gold_schema}.get_defect_trending_by_ata"},
+          {"id": "sf05", "identifier": "${catalog}.${gold_schema}.get_operational_impact_summary"},
+          {"id": "sf06", "identifier": "${catalog}.${gold_schema}.get_defect_part_linkage"}
+        ],
+        "example_question_sqls": [
+          {"id": "bq01", "question": ["How many removals this month?"], "sql": ["SELECT MEASURE(removal_count) FROM component_lifecycle_analytics_metrics WHERE removal_date >= DATE_TRUNC('MONTH', CURRENT_DATE())"]},
+          {"id": "bq02", "question": ["Average hours at removal for all parts"], "sql": ["SELECT MEASURE(avg_hours_at_removal) FROM component_lifecycle_analytics_metrics"]},
+          {"id": "bq03", "question": ["Removal trend by month for the last 12 months"], "sql": ["SELECT month_name, year, MEASURE(removal_count) FROM component_lifecycle_analytics_metrics WHERE removal_date >= ADD_MONTHS(CURRENT_DATE(), -12) GROUP BY month_name, year ORDER BY year, month"]},
+          {"id": "bq04", "question": ["Top 5 ATA chapters by defect count this quarter"], "sql": ["SELECT chapter, chapter_description, MEASURE(defect_count) AS defect_count FROM defect_intelligence_analytics_metrics WHERE reported_date >= DATE_TRUNC('QUARTER', CURRENT_DATE()) GROUP BY chapter, chapter_description ORDER BY defect_count DESC LIMIT 5"]},
+          {"id": "bq05", "question": ["Total delay hours from propulsion defects this year"], "sql": ["SELECT MEASURE(total_delay_hours) FROM defect_intelligence_analytics_metrics WHERE reported_date >= DATE_TRUNC('YEAR', CURRENT_DATE())"]},
+          {"id": "bq06", "question": ["MTBUR for all parts in the last 24 months"], "sql": ["SELECT * FROM get_mtbur_analysis(NULL, '24', 'UNSCHEDULED')"]},
+          {"id": "bq07", "question": ["Show all removals for part 337-100-305-0 in 2025"], "sql": ["SELECT * FROM get_component_removal_history('337-100-305-0', '2025-01-01', '2025-12-31', NULL)"]}
+        ]
+      },
+      "benchmarks": {
+        "questions": [
+          {"id": "bm01", "question": ["How many removals this month?"], "answer": [{"format": "SQL", "content": ["SELECT MEASURE(removal_count) FROM component_lifecycle_analytics_metrics WHERE removal_date >= DATE_TRUNC('MONTH', CURRENT_DATE())"]}]},
+          {"id": "bm02", "question": ["Average hours at removal for all parts"], "answer": [{"format": "SQL", "content": ["SELECT MEASURE(avg_hours_at_removal) FROM component_lifecycle_analytics_metrics"]}]},
+          {"id": "bm03", "question": ["Top 5 ATA chapters by defect count this quarter"], "answer": [{"format": "SQL", "content": ["SELECT chapter, chapter_description, MEASURE(defect_count) AS defect_count FROM defect_intelligence_analytics_metrics WHERE reported_date >= DATE_TRUNC('QUARTER', CURRENT_DATE()) GROUP BY chapter, chapter_description ORDER BY defect_count DESC LIMIT 5"]}]}
+        ]
+      }
+    },
+    {
+      "title": "Inventory & Supply Chain Intelligence",
+      "description": "Natural language analytics for Horizon Air propulsion spare parts inventory, LLP life-limit tracking, procurement orders, and shop findings. Covers spare positioning, stock-out risk, movement velocity, order fulfillment, and teardown root cause analysis.",
+      "warehouse_id": "${warehouse_id}",
+      "data_sources": {
+        "tables": [
+          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part"},
+          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_station"},
+          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date"},
+          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_inventory_snapshot"},
+          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_inventory_transaction"},
+          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_inventory_control"},
+          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_order"},
+          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_teardown"}
+        ],
+        "metric_views": [
+          {"identifier": "${catalog}.${gold_schema}.inventory_spares_analytics_metrics"},
+          {"identifier": "${catalog}.${gold_schema}.procurement_overhaul_analytics_metrics"}
+        ]
+      },
+      "config": {
+        "sample_questions": [
+          {"id": "sq06", "question": ["Which LLPs have fewer than 1,000 cycles remaining fleet-wide?"]},
+          {"id": "sq07", "question": ["How many serviceable spares of P/N 337-100-305-0 are at PDX?"]},
+          {"id": "sq08", "question": ["Which parts have stock-out risk based on recent removals?"]},
+          {"id": "sq09", "question": ["Show open repair orders exceeding 30-day lead time"]},
+          {"id": "sq10", "question": ["What are the most common shop findings for ATA 73 teardowns?"]}
+        ]
+      },
+      "instructions": {
+        "text_instructions": [
+          {"id": "ti13", "content": ["You are the Inventory & Supply Chain Intelligence assistant for Horizon Air's propulsion spare parts program."]},
+          {"id": "ti14", "content": ["Parts scope: Propulsion components for CF34-8E engines and APS2300 APU. Data is pre-filtered to propulsion parts only."]},
+          {"id": "ti15", "content": ["For aggregate metrics (counts, values, rates), use Metric Views: inventory_spares_analytics_metrics or procurement_overhaul_analytics_metrics with MEASURE()."]},
+          {"id": "ti16", "content": ["For parameterized queries (specific P/N, station, threshold), use TVFs: get_spare_availability_by_station, get_llp_redline_status, get_inventory_movement_velocity, get_order_status_summary, get_shop_findings_by_part."]},
+          {"id": "ti17", "content": ["CONDITIONS: SVC=Serviceable, UNS=Unserviceable, SCR=Scrapped, AOG=Aircraft on Ground, RFI=Ready for Install."]},
+          {"id": "ti18", "content": ["LLP=Life Limited Part (hard cycle/hour/day limit). Red-line=approaching a control limit. Use get_llp_redline_status TVF for threshold queries."]},
+          {"id": "ti19", "content": ["ORDER TYPES: Purchase, Repair, Exchange, Loan. FULFILLMENT RATE = qty_received / qty_require."]},
+          {"id": "ti20", "content": ["NFF=No Fault Found (teardown result). Shop Finding=root cause from component teardown inspection."]},
+          {"id": "ti21", "content": ["Stock-out risk = P/N with < 2 serviceable spares AND high removal velocity. Combine get_spare_availability_by_station with get_inventory_movement_velocity for this analysis."]},
+          {"id": "ti22", "content": ["When asked about 'spares at station' or 'inventory by condition', use get_spare_availability_by_station TVF."]},
+          {"id": "ti23", "content": ["When asked about 'LLP' or 'remaining cycles/hours' or 'due soon', use get_llp_redline_status TVF."]},
+          {"id": "ti24", "content": ["Default thresholds if not specified: remaining_cycles=1000, remaining_hours=2000. TVF params are STRING type."]}
+        ],
+        "sql_functions": [
+          {"id": "sf07", "identifier": "${catalog}.${gold_schema}.get_spare_availability_by_station"},
+          {"id": "sf08", "identifier": "${catalog}.${gold_schema}.get_llp_redline_status"},
+          {"id": "sf09", "identifier": "${catalog}.${gold_schema}.get_inventory_movement_velocity"},
+          {"id": "sf10", "identifier": "${catalog}.${gold_schema}.get_order_status_summary"},
+          {"id": "sf11", "identifier": "${catalog}.${gold_schema}.get_shop_findings_by_part"}
+        ],
+        "example_question_sqls": [
+          {"id": "bq13", "question": ["How many serviceable spares at PDX?"], "sql": ["SELECT station_code, MEASURE(serviceable_count) FROM inventory_spares_analytics_metrics WHERE station_code = 'PDX'"]},
+          {"id": "bq14", "question": ["Total inventory value by condition"], "sql": ["SELECT condition, MEASURE(total_value) AS value FROM inventory_spares_analytics_metrics GROUP BY condition ORDER BY value DESC"]},
+          {"id": "bq15", "question": ["LLPs with fewer than 1000 cycles remaining"], "sql": ["SELECT * FROM get_llp_redline_status('1000', '999999', NULL)"]},
+          {"id": "bq16", "question": ["Open repair orders this quarter"], "sql": ["SELECT MEASURE(open_order_count) FROM procurement_overhaul_analytics_metrics WHERE order_date >= DATE_TRUNC('QUARTER', CURRENT_DATE())"]},
+          {"id": "bq17", "question": ["Average repair cost by order type"], "sql": ["SELECT order_type, MEASURE(avg_repair_cost) AS avg_cost FROM procurement_overhaul_analytics_metrics GROUP BY order_type ORDER BY avg_cost DESC"]},
+          {"id": "bq18", "question": ["Order fulfillment rate trend by month"], "sql": ["SELECT month, year, MEASURE(fulfillment_rate) FROM procurement_overhaul_analytics_metrics GROUP BY month, year ORDER BY year, month"]},
+          {"id": "bq19", "question": ["Serviceable spares for part 337-100-305-0 at all stations"], "sql": ["SELECT * FROM get_spare_availability_by_station('337-100-305-0', NULL, 'SVC')"]}
+        ]
+      },
+      "benchmarks": {
+        "questions": [
+          {"id": "bm04", "question": ["How many serviceable spares at PDX?"], "answer": [{"format": "SQL", "content": ["SELECT station_code, MEASURE(serviceable_count) FROM inventory_spares_analytics_metrics WHERE station_code = 'PDX'"]}]},
+          {"id": "bm05", "question": ["Average repair cost by order type"], "answer": [{"format": "SQL", "content": ["SELECT order_type, MEASURE(avg_repair_cost) AS avg_cost FROM procurement_overhaul_analytics_metrics GROUP BY order_type ORDER BY avg_cost DESC"]}]},
+          {"id": "bm06", "question": ["LLPs with fewer than 1000 cycles remaining"], "answer": [{"format": "SQL", "content": ["SELECT * FROM get_llp_redline_status('1000', '999999', NULL)"]}]}
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+table_name: qx_ppmtx_gold_dim_station
+entity_type: dimension
+domain: component_lifecycle
+scd_type: 1
+business_key: ["station_code"]
+description: "Maintenance station dimension for Horizon Air network locations. Business: identifies each maintenance station where component work is performed, enabling station-level spare positioning and AOG risk analysis. Technical: SCD Type 1 dimension derived from distinct station values across Silver transaction and inventory tables."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "component_lifecycle"
+  entity_type: "dimension"
+  scd_type: "1"
+
+unknown_member:
+  dim_station_key: -1
+  station_code: "UNKNOWN"
+  station_name: "Unknown Station"
+
+primary_key: ["dim_station_key"]
+
+columns:
+  - name: dim_station_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for the station dimension. Business: system-generated unique identifier for each station. Technical: generated via hash or sequence of business key."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: station
+      transformation: GENERATED
+      transformation_logic: "ROW_NUMBER() OVER (ORDER BY station_code)"
+
+  - name: station_code
+    data_type: STRING
+    nullable: false
+    description: "Three-letter station code. Business: IATA airport code identifying the maintenance location (e.g., PDX, SEA, BLI, RDM). Technical: natural key derived from Silver station and location columns."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: station
+      transformation: DIRECT_COPY
+      transformation_logic: "DISTINCT station FROM qx_ppmtx_ac_pn_transaction_history UNION DISTINCT location FROM qx_ppmtx_pn_inventory_detail"
+
+  - name: station_name
+    data_type: STRING
+    nullable: true
+    description: "Station full name. Business: human-readable name for the maintenance station for reports and dashboards. Technical: derived from station code via reference mapping."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: station
+      transformation: DERIVED_CONDITIONAL
+      transformation_logic: "CASE station WHEN 'PDX' THEN 'Portland' WHEN 'SEA' THEN 'Seattle' ... END"

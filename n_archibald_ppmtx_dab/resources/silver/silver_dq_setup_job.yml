@@ -1,0 +1,18 @@
+resources:
+  jobs:
+    qx_ppmtx_silver_dq_setup_job:
+      name: "qx_ppmtx Silver DQ Rules Setup"
+      tasks:
+        - task_key: setup_dq_rules
+          notebook_task:
+            notebook_path: ../../src/ppmtx_silver/setup_dq_rules_table.py
+            base_parameters:
+              catalog: ${var.catalog}
+              silver_schema: ${var.silver_schema}
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      queue:
+        enabled: true

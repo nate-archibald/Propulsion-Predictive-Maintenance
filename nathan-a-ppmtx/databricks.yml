@@ -1,0 +1,18 @@
+bundle:
+  name: nathan-a-ppmtx
+
+resources:
+  apps:
+    app:
+      name: "nathan-a-ppmtx"
+      description: "ppmtx app"
+      source_code_path: ./
+      # Uncomment to enable on behalf of user API scopes. Available scopes: sql, dashboards.genie, files.files, serving.serving-endpoints
+      # user_api_scopes:
+      #   - sql
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: https://adb-620317033646362.2.azuredatabricks.net

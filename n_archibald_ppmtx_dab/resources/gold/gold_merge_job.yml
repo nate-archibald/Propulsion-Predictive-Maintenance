@@ -1,0 +1,30 @@
+resources:
+  jobs:
+    qx_ppmtx_gold_merge_job:
+      name: "qx_ppmtx Gold Layer Merge"
+      tags:
+        environment: dev
+        layer: gold
+        job_type: merge
+        project: qx_ppmtx
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: America/Los_Angeles
+        pause_status: PAUSED
+      tasks:
+        - task_key: merge_silver_to_gold
+          notebook_task:
+            notebook_path: ../../src/ppmtx_gold/merge_gold_tables.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.silver_schema}
+              silver_catalog: ${var.catalog}
+              silver_schema: ${var.silver_schema}
+          environment_key: gold_env
+
+      environments:
+        - environment_key: gold_env
+          spec:
+            client: "1"
+            dependencies:
+              - pyyaml>=6.0

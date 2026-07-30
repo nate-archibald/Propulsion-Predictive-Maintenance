@@ -1,0 +1,200 @@
+table_name: qx_ppmtx_gold_dim_part
+entity_type: dimension
+domain: part_master
+scd_type: 1
+business_key: ["pn"]
+description: "Propulsion part number master dimension containing all part attributes, costs, and classification data. Business: central reference for every propulsion component type in the Horizon Air E175 fleet, enabling part-level analytics across defects, removals, inventory, and procurement. Technical: SCD Type 1 dimension sourced from TRAX pn_master via Silver qx_ppmtx_pn_master, updated daily."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "part_master"
+  entity_type: "dimension"
+  scd_type: "1"
+
+unknown_member:
+  dim_part_key: -1
+  pn: "UNKNOWN"
+  pn_description: "Unknown Part"
+  category: "Unknown"
+  sub_category: "Unknown"
+  expenditure: "Unknown"
+  stock_uom: "Unknown"
+
+primary_key: ["dim_part_key"]
+
+columns:
+  - name: dim_part_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for the part dimension. Business: system-generated unique identifier for each part number record. Technical: generated via monotonically_increasing_id or hash of business key."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: pn
+      transformation: GENERATED
+      transformation_logic: "ROW_NUMBER() OVER (ORDER BY pn)"
+
+  - name: pn
+    data_type: STRING
+    nullable: false
+    description: "Part number identifier. Business: the manufacturer-assigned identifier for a propulsion component type used across all Horizon Air maintenance systems. Technical: natural key from TRAX pn_master, unique per part type."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: pn
+      transformation: DIRECT_COPY
+      transformation_logic: "pn"
+
+  - name: pn_description
+    data_type: STRING
+    nullable: true
+    description: "Part description text. Business: human-readable name of the component used in work orders, reports, and Genie queries. Technical: free-text field from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: pn_description
+      transformation: DIRECT_COPY
+      transformation_logic: "pn_description"
+
+  - name: category
+    data_type: STRING
+    nullable: true
+    description: "Part category classification. Business: top-level grouping for inventory management and reporting (e.g., Rotable, Expendable, Consumable). Technical: categorical attribute from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: category
+      transformation: DIRECT_COPY
+      transformation_logic: "category"
+
+  - name: sub_category
+    data_type: STRING
+    nullable: true
+    description: "Part sub-category classification. Business: secondary grouping within category for finer inventory segmentation. Technical: categorical attribute from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: sub_category
+      transformation: DIRECT_COPY
+      transformation_logic: "sub_category"
+
+  - name: expenditure
+    data_type: STRING
+    nullable: true
+    description: "Expenditure classification. Business: financial classification determining how the part is capitalized or expensed. Technical: accounting code from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: expenditure
+      transformation: DIRECT_COPY
+      transformation_logic: "expenditure"
+
+  - name: stock_uom
+    data_type: STRING
+    nullable: true
+    description: "Stock unit of measure. Business: the standard unit used for inventory counting and ordering. Technical: UOM code from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: stock_uom
+      transformation: DIRECT_COPY
+      transformation_logic: "stock_uom"
+
+  - name: shelf_life_flag
+    data_type: STRING
+    nullable: true
+    description: "Shelf life applicability flag. Business: indicates whether this part type has an expiration date that must be tracked. Technical: Y/N flag from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: shelf_life_flag
+      transformation: DIRECT_COPY
+      transformation_logic: "shelf_life_flag"
+
+  - name: shelf_life_days
+    data_type: DECIMAL
+    nullable: true
+    description: "Shelf life duration in days. Business: maximum storage duration before a part expires and becomes unserviceable. Technical: numeric attribute from pn_master, null if shelf_life_flag is N."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: shelf_life_days
+      transformation: DIRECT_COPY
+      transformation_logic: "shelf_life_days"
+
+  - name: tool_calibration_flag
+    data_type: STRING
+    nullable: true
+    description: "Tool calibration requirement flag. Business: indicates if this part requires periodic calibration. Technical: Y/N flag from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: tool_calibration_flag
+      transformation: DIRECT_COPY
+      transformation_logic: "tool_calibration_flag"
+
+  - name: tool_life_days
+    data_type: DECIMAL
+    nullable: true
+    description: "Tool life duration in days. Business: calibration interval for tools requiring periodic validation. Technical: numeric attribute from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: tool_life_days
+      transformation: DIRECT_COPY
+      transformation_logic: "tool_life_days"
+
+  - name: ri_flag
+    data_type: STRING
+    nullable: true
+    description: "Receiving inspection required flag. Business: indicates if incoming parts of this type must undergo receiving inspection before stock. Technical: Y/N flag from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: ri_flag
+      transformation: DIRECT_COPY
+      transformation_logic: "ri_flag"
+
+  - name: pn_supersede
+    data_type: STRING
+    nullable: true
+    description: "Superseding part number. Business: replacement part number if this part has been superseded by a newer design. Technical: FK-like reference to another pn_master record."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: pn_supersede
+      transformation: DIRECT_COPY
+      transformation_logic: "pn_supersede"
+
+  - name: standard_cost
+    data_type: DECIMAL
+    nullable: true
+    description: "Standard unit cost. Business: budgeted cost per unit used for financial planning and variance analysis. Technical: decimal cost attribute from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: standard_cost
+      transformation: DIRECT_COPY
+      transformation_logic: "standard_cost"
+
+  - name: average_cost
+    data_type: DECIMAL
+    nullable: true
+    description: "Average unit cost. Business: rolling average acquisition cost based on historical purchases. Technical: decimal cost attribute from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: average_cost
+      transformation: DIRECT_COPY
+      transformation_logic: "average_cost"
+
+  - name: gl_company
+    data_type: STRING
+    nullable: true
+    description: "General ledger company code. Business: the legal entity this part is assigned to for financial reporting. Technical: GL code from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: gl_company
+      transformation: DIRECT_COPY
+      transformation_logic: "gl_company"
+
+  - name: gl_expenditure
+    data_type: STRING
+    nullable: true
+    description: "General ledger expenditure code. Business: the expense account classification for procurement of this part. Technical: GL code from pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_master
+      silver_column: gl_expenditure
+      transformation: DIRECT_COPY
+      transformation_logic: "gl_expenditure"

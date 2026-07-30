@@ -1,0 +1,46 @@
+# Dashboard Deploy Job
+# Deploys AI/BI dashboards to the Databricks workspace via Asset Bundles.
+# Triggered manually or on merge to main.
+
+resources:
+  jobs:
+    dashboard_deploy:
+      name: "[${bundle.environment}] QX PPMTX - Deploy AI/BI Dashboards"
+      tags:
+        project: "qx-predictive-maintenance"
+        component: "monitoring"
+        stage: "dashboard-deploy"
+      tasks:
+        - task_key: validate_queries
+          description: "Pre-deploy: validate all dashboard SQL queries"
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "Standard_DS3_v2"
+            num_workers: 0
+            spark_conf:
+              "spark.databricks.cluster.profile": "singleNode"
+              "spark.master": "local[*]"
+          python_wheel_task:
+            package_name: "qx_ppmtx"
+            entry_point: "validate_dashboard_queries"
+          libraries:
+            - pypi:
+                package: "databricks-sdk>=0.30.0"
+
+        - task_key: validate_encodings
+          description: "Pre-deploy: validate widget encoding alignment"
+          depends_on:
+            - task_key: validate_queries
+          existing_cluster_id: "${var.cluster_id}"
+          spark_python_task:
+            python_file: "src/../scripts/validate_widget_encodings.py"
+
+        - task_key: deploy_dashboards
+          description: "Deploy all .lvdash.json files to workspace"
+          depends_on:
+            - task_key: validate_encodings
+          existing_cluster_id: "${var.cluster_id}"
+          spark_python_task:
+            python_file: "src/../scripts/deploy_dashboard.py"
+            parameters:
+              - "--all"

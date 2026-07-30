@@ -1,0 +1,15 @@
+source_table,status,gold_table_mapping,domain,rationale,implementation_phase
+qx_ppmtx_pn_master,INCLUDED,qx_ppmtx_gold_dim_part,part_master,Central part reference dimension - all part attributes needed for every analytics use case,1
+qx_ppmtx_ac_pn_transaction_history,INCLUDED,qx_ppmtx_gold_fact_component_removal,component_lifecycle,Primary source for removal/installation events - MTBUR and failure trending,1
+qx_ppmtx_defect_report,INCLUDED,qx_ppmtx_gold_fact_defect,defect_management,Primary defect tracking - operational impact attribution and trending,1
+qx_ppmtx_defect_report_pn,INCLUDED,qx_ppmtx_gold_bridge_defect_part,defect_management,Critical for defect-to-part linkage (FR-5) - enables end-to-end traceability,1
+qx_ppmtx_pn_inventory_history,INCLUDED,qx_ppmtx_gold_fact_inventory_transaction,inventory_spares,Inventory movement history - removal velocity and stock analytics,1
+qx_ppmtx_pn_inventory_detail,INCLUDED,qx_ppmtx_gold_fact_inventory_snapshot,inventory_spares,Current inventory position - spare availability queries (FR-4),1
+qx_ppmtx_pn_inventory_control,INCLUDED,qx_ppmtx_gold_fact_inventory_control,inventory_spares,Maintenance schedule limits - LLP red-line tracking (FR-7),1
+qx_ppmtx_order_detail,INCLUDED,qx_ppmtx_gold_fact_order,procurement_overhaul,Procurement orders - lead time analysis and order fulfillment,1
+qx_ppmtx_pn_tear_down_report,INCLUDED,qx_ppmtx_gold_fact_teardown,procurement_overhaul,Shop findings - root cause analysis and fault confirmation rates,1
+qx_ppmtx_dq_orphaned_defect_pn,EXCLUDED,,data_quality,Internal DQ monitoring table - not relevant for business analytics. Used for Silver pipeline health checks only.,N/A
+qx_ppmtx_dq_orphaned_inventory,EXCLUDED,,data_quality,Internal DQ monitoring table - referential integrity check for Silver pipeline operations.,N/A
+qx_ppmtx_dq_record_counts,EXCLUDED,,data_quality,Record count monitoring - operational metadata not needed in Gold analytical model.,N/A
+qx_ppmtx_dq_rules,EXCLUDED,,data_quality,DQ rule definitions - configuration metadata for Silver pipelines not relevant to Gold analytics.,N/A
+qx_ppmtx_pn_inventory_detail_quarantine,EXCLUDED,,data_quality,Quarantined records that failed critical DQ checks - excluded from Gold to maintain data quality. May be used for DQ monitoring dashboards in a future phase.,N/A

@@ -1,0 +1,180 @@
+table_name: qx_ppmtx_gold_fact_inventory_transaction
+entity_type: fact
+domain: inventory_spares
+grain: "One row per inventory movement event, identified by (transaction_no, batch)"
+update_frequency: hourly
+fact_type: transaction
+description: "Inventory movement transaction fact capturing all part arrivals, issues, transfers, and adjustments. Business: enables removal velocity analysis, spare positioning optimization, and stock-out risk identification across the Horizon Air station network. Technical: transaction fact sourced from Silver qx_ppmtx_pn_inventory_history with surrogate key joins to dim_part, dim_aircraft, dim_station, and dim_date."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "inventory_spares"
+  entity_type: "fact"
+  grain: "transaction_no + batch"
+  fact_type: "transaction"
+
+primary_key: ["fact_inventory_transaction_key"]
+
+foreign_keys:
+  - columns: ["dim_part_key"]
+    references: qx_ppmtx_gold_dim_part(dim_part_key)
+    nullable: true
+  - columns: ["dim_aircraft_key"]
+    references: qx_ppmtx_gold_dim_aircraft(dim_aircraft_key)
+    nullable: true
+  - columns: ["dim_station_key"]
+    references: qx_ppmtx_gold_dim_station(dim_station_key)
+    nullable: true
+  - columns: ["transaction_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+
+measures:
+  - qty
+
+columns:
+  - name: fact_inventory_transaction_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for inventory transaction fact. Business: unique identifier for each inventory movement event. Technical: generated via hash of (transaction_no, batch)."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: transaction_no
+      transformation: GENERATED
+      transformation_logic: "HASH(transaction_no, batch)"
+
+  - name: dim_part_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to part dimension. Business: identifies the part number being moved. Technical: lookup join on pn to dim_part."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: pn
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_part ON pn = dim_part.pn"
+
+  - name: dim_aircraft_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to aircraft dimension. Business: identifies the aircraft involved (if installed/removed from aircraft). Technical: lookup join on ac to dim_aircraft."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: ac
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_aircraft ON ac = dim_aircraft.ac"
+
+  - name: dim_station_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to station dimension. Business: the station where this inventory movement occurred. Technical: lookup join on location to dim_station."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: location
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_station ON location = dim_station.station_code"
+
+  - name: transaction_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for transaction date. Business: when this inventory movement occurred. Technical: derived from processed_timestamp."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: processed_timestamp
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(processed_timestamp AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: transaction_no
+    data_type: DECIMAL
+    nullable: false
+    description: "Inventory transaction number. Business: unique movement identifier in the inventory system. Technical: degenerate dimension, part of grain."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: transaction_no
+      transformation: DIRECT_COPY
+      transformation_logic: "transaction_no"
+
+  - name: batch
+    data_type: DECIMAL
+    nullable: false
+    description: "Inventory batch number. Business: identifies the specific part instance being moved. Technical: degenerate dimension, part of grain."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: batch
+      transformation: DIRECT_COPY
+      transformation_logic: "batch"
+
+  - name: transaction_type
+    data_type: STRING
+    nullable: true
+    description: "Inventory transaction type. Business: type of movement (Receipt, Issue, Transfer, Adjustment, etc.). Technical: categorical attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: transaction_type
+      transformation: DIRECT_COPY
+      transformation_logic: "transaction_type"
+
+  - name: sn
+    data_type: STRING
+    nullable: true
+    description: "Serial number. Business: specific part instance being moved. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: sn
+      transformation: DIRECT_COPY
+      transformation_logic: "sn"
+
+  - name: condition
+    data_type: STRING
+    nullable: true
+    description: "Part condition code. Business: serviceability status (SVC, UNS, SCR, etc.) at time of movement. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: condition
+      transformation: DIRECT_COPY
+      transformation_logic: "condition"
+
+  - name: qty
+    data_type: DECIMAL
+    nullable: true
+    description: "Quantity moved. Business: number of units in this inventory transaction. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: qty
+      transformation: DIRECT_COPY
+      transformation_logic: "qty"
+
+  - name: order_type
+    data_type: STRING
+    nullable: true
+    description: "Associated order type. Business: links inventory movement to originating order. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: order_type
+      transformation: DIRECT_COPY
+      transformation_logic: "order_type"
+
+  - name: order_no
+    data_type: DECIMAL
+    nullable: true
+    description: "Associated order number. Business: links to the procurement or repair order. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: order_no
+      transformation: DIRECT_COPY
+      transformation_logic: "order_no"
+
+  - name: wo
+    data_type: DECIMAL
+    nullable: true
+    description: "Work order number. Business: maintenance work order consuming this part. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_history
+      silver_column: wo
+      transformation: DIRECT_COPY
+      transformation_logic: "wo"

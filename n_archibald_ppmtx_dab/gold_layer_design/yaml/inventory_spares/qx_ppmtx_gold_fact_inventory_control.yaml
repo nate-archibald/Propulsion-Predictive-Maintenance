@@ -1,0 +1,216 @@
+table_name: qx_ppmtx_gold_fact_inventory_control
+entity_type: fact
+domain: inventory_spares
+grain: "One row per maintenance control record, identified by (pn, sn, control)"
+update_frequency: daily
+fact_type: accumulating_snapshot
+description: "Maintenance control schedule accumulating snapshot fact. Business: tracks scheduled vs actual maintenance thresholds (hours, cycles, days) for every serialized propulsion component, enabling LLP red-line tracking, schedule compliance monitoring, and proactive shop visit planning. Technical: accumulating snapshot fact sourced from Silver qx_ppmtx_pn_inventory_control with surrogate key joins to dim_part and dim_date."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "inventory_spares"
+  entity_type: "fact"
+  grain: "pn + sn + control"
+  fact_type: "accumulating_snapshot"
+
+primary_key: ["fact_inventory_control_key"]
+
+foreign_keys:
+  - columns: ["dim_part_key"]
+    references: qx_ppmtx_gold_dim_part(dim_part_key)
+    nullable: true
+  - columns: ["schedule_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+  - columns: ["reset_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+
+measures:
+  - schedule_hours
+  - schedule_cycles
+  - schedule_days
+  - actual_hours
+  - actual_minutes
+  - actual_cycles
+  - actual_days
+  - remaining_hours
+  - remaining_cycles
+  - remaining_days
+
+columns:
+  - name: fact_inventory_control_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for inventory control fact. Business: unique identifier for each maintenance control record. Technical: generated via hash of (pn, sn, control)."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: pn
+      transformation: GENERATED
+      transformation_logic: "HASH(pn, sn, control)"
+
+  - name: dim_part_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to part dimension. Business: the part number being monitored. Technical: lookup join on pn to dim_part."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: pn
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_part ON pn = dim_part.pn"
+
+  - name: schedule_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for scheduled maintenance date. Business: when the next maintenance action is due. Technical: derived from schedule_date."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: schedule_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(schedule_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: reset_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for last reset date. Business: when the maintenance counter was last reset (e.g., after shop visit). Technical: derived from reset_date."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: reset_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(reset_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: pn
+    data_type: STRING
+    nullable: false
+    description: "Part number. Business: the controlled part type. Technical: degenerate dimension, part of grain."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: pn
+      transformation: DIRECT_COPY
+      transformation_logic: "pn"
+
+  - name: sn
+    data_type: STRING
+    nullable: false
+    description: "Serial number. Business: the specific part instance being tracked. Technical: degenerate dimension, part of grain."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: sn
+      transformation: DIRECT_COPY
+      transformation_logic: "sn"
+
+  - name: control
+    data_type: STRING
+    nullable: false
+    description: "Control type. Business: type of maintenance limit (e.g., Hard Time, On Condition, TBO). Technical: degenerate dimension, part of grain."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: control
+      transformation: DIRECT_COPY
+      transformation_logic: "control"
+
+  - name: schedule_hours
+    data_type: DECIMAL
+    nullable: true
+    description: "Scheduled hours limit. Business: maximum flight hours before required maintenance action (red-line for hours). Technical: semi-additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: schedule_hours
+      transformation: DIRECT_COPY
+      transformation_logic: "schedule_hours"
+
+  - name: schedule_cycles
+    data_type: DECIMAL
+    nullable: true
+    description: "Scheduled cycles limit. Business: maximum flight cycles before required maintenance action (red-line for cycles, critical for high-cycle PNW ops). Technical: semi-additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: schedule_cycles
+      transformation: DIRECT_COPY
+      transformation_logic: "schedule_cycles"
+
+  - name: schedule_days
+    data_type: DECIMAL
+    nullable: true
+    description: "Scheduled days limit. Business: maximum calendar days before required maintenance action. Technical: semi-additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: schedule_days
+      transformation: DIRECT_COPY
+      transformation_logic: "schedule_days"
+
+  - name: actual_hours
+    data_type: DECIMAL
+    nullable: true
+    description: "Actual hours accumulated. Business: current flight hours since last reset toward the limit. Technical: semi-additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: actual_hours
+      transformation: DIRECT_COPY
+      transformation_logic: "actual_hours"
+
+  - name: actual_minutes
+    data_type: DECIMAL
+    nullable: true
+    description: "Actual minutes accumulated. Business: fractional hours for precision tracking. Technical: semi-additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: actual_minutes
+      transformation: DIRECT_COPY
+      transformation_logic: "actual_minutes"
+
+  - name: actual_cycles
+    data_type: DECIMAL
+    nullable: true
+    description: "Actual cycles accumulated. Business: current cycles since last reset toward the cycle limit. Technical: semi-additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: actual_cycles
+      transformation: DIRECT_COPY
+      transformation_logic: "actual_cycles"
+
+  - name: actual_days
+    data_type: DECIMAL
+    nullable: true
+    description: "Actual days accumulated. Business: calendar days since last reset toward the day limit. Technical: semi-additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: actual_days
+      transformation: DIRECT_COPY
+      transformation_logic: "actual_days"
+
+  - name: remaining_hours
+    data_type: DECIMAL
+    nullable: true
+    description: "Remaining hours to limit. Business: hours remaining before red-line, critical for fleet scan and shop visit planning. Technical: derived as schedule_hours - actual_hours."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: schedule_hours
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "schedule_hours - actual_hours"
+
+  - name: remaining_cycles
+    data_type: DECIMAL
+    nullable: true
+    description: "Remaining cycles to limit. Business: cycles remaining before red-line, the primary LLP tracking metric for high-cycle PNW operations. Technical: derived as schedule_cycles - actual_cycles."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: schedule_cycles
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "schedule_cycles - actual_cycles"
+
+  - name: remaining_days
+    data_type: DECIMAL
+    nullable: true
+    description: "Remaining days to limit. Business: calendar days remaining before maintenance action required. Technical: derived as schedule_days - actual_days."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_control
+      silver_column: schedule_days
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "schedule_days - actual_days"

@@ -1,0 +1,40 @@
+resources:
+  jobs:
+    semantic_layer_job:
+      name: "[${var.user_prefix}] Semantic Layer - TVFs + Metric Views + Genie Spaces"
+      tasks:
+        - task_key: create_tvfs
+          notebook_task:
+            notebook_path: ../../src/ppmtx_semantic/create_tvfs.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.silver_schema}
+          environment_key: default
+
+        - task_key: create_metric_views
+          notebook_task:
+            notebook_path: ../../src/ppmtx_semantic/create_metric_views.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.silver_schema}
+              warehouse_id: ${var.warehouse_id}
+          depends_on:
+            - task_key: create_tvfs
+          environment_key: default
+
+        - task_key: deploy_genie_spaces
+          notebook_task:
+            notebook_path: ../../src/ppmtx_semantic/deploy_genie_spaces.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.silver_schema}
+              warehouse_id: ${var.warehouse_id}
+          depends_on:
+            - task_key: create_tvfs
+            - task_key: create_metric_views
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"

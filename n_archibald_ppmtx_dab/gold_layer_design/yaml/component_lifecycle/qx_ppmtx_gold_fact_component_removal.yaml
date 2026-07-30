@@ -1,0 +1,317 @@
+table_name: qx_ppmtx_gold_fact_component_removal
+entity_type: fact
+domain: component_lifecycle
+grain: "One row per component removal or installation event, identified by (transaction, transaction_item)"
+update_frequency: hourly
+fact_type: transaction
+description: "Component removal and installation transaction fact. Business: tracks every propulsion component swap event enabling MTBUR calculations, time-on-wing analysis, failure pattern trending, and removal velocity metrics critical for reliability engineering and spare positioning. Technical: transaction fact sourced from Silver qx_ppmtx_ac_pn_transaction_history with surrogate key joins to dim_part, dim_aircraft, dim_station, dim_ata_chapter, and dim_date."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "component_lifecycle"
+  entity_type: "fact"
+  grain: "transaction + transaction_item"
+  fact_type: "transaction"
+
+primary_key: ["fact_component_removal_key"]
+
+foreign_keys:
+  - columns: ["dim_part_key"]
+    references: qx_ppmtx_gold_dim_part(dim_part_key)
+    nullable: true
+  - columns: ["dim_aircraft_key"]
+    references: qx_ppmtx_gold_dim_aircraft(dim_aircraft_key)
+    nullable: true
+  - columns: ["dim_station_key"]
+    references: qx_ppmtx_gold_dim_station(dim_station_key)
+    nullable: true
+  - columns: ["dim_ata_chapter_key"]
+    references: qx_ppmtx_gold_dim_ata_chapter(dim_ata_chapter_key)
+    nullable: true
+  - columns: ["transaction_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+
+measures:
+  - hours_installed
+  - minutes_installed
+  - cycles_installed
+  - days_installed
+  - qty
+
+columns:
+  - name: fact_component_removal_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for component removal fact. Business: unique identifier for each removal/installation event. Technical: generated via hash of (transaction, transaction_item)."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: transaction
+      transformation: GENERATED
+      transformation_logic: "HASH(transaction, transaction_item)"
+
+  - name: dim_part_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to part dimension. Business: identifies the part number involved in this removal/installation. Technical: lookup join on pn to dim_part."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: pn
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_part ON pn = dim_part.pn"
+
+  - name: dim_aircraft_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to aircraft dimension. Business: identifies the aircraft tail this event occurred on. Technical: lookup join on ac to dim_aircraft."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: ac
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_aircraft ON ac = dim_aircraft.ac"
+
+  - name: dim_station_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to station dimension. Business: identifies the maintenance station where this event occurred. Technical: lookup join on station to dim_station."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: station
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_station ON station = dim_station.station_code"
+
+  - name: dim_ata_chapter_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to ATA chapter dimension. Business: identifies the ATA system classification for this event. Technical: lookup join on (chapter, section, paragraph) to dim_ata_chapter."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: chapter
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_ata_chapter ON chapter = dim_ata_chapter.chapter AND section = dim_ata_chapter.section AND paragraph = dim_ata_chapter.paragraph"
+
+  - name: transaction_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for transaction date. Business: the date this removal/installation occurred. Technical: CAST(date_format(transaction_date, 'yyyyMMdd') AS INT)."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: transaction_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(transaction_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: transaction
+    data_type: STRING
+    nullable: false
+    description: "Transaction identifier. Business: the unique transaction number from TRAX for this component swap event. Technical: degenerate dimension, part of grain composite key."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: transaction
+      transformation: DIRECT_COPY
+      transformation_logic: "transaction"
+
+  - name: transaction_item
+    data_type: DECIMAL
+    nullable: false
+    description: "Transaction line item number. Business: line sequence within a multi-line transaction. Technical: degenerate dimension, part of grain composite key."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: transaction_item
+      transformation: DIRECT_COPY
+      transformation_logic: "transaction_item"
+
+  - name: transaction_type
+    data_type: STRING
+    nullable: true
+    description: "Transaction type code. Business: indicates removal (RMV), installation (INS), or other component movement types. Technical: categorical attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: transaction_type
+      transformation: DIRECT_COPY
+      transformation_logic: "transaction_type"
+
+  - name: transaction_type_control
+    data_type: STRING
+    nullable: true
+    description: "Transaction type control classification. Business: scheduled vs unscheduled designation for reliability categorization. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: transaction_type_control
+      transformation: DIRECT_COPY
+      transformation_logic: "transaction_type_control"
+
+  - name: sn
+    data_type: STRING
+    nullable: true
+    description: "Serial number of the specific component instance. Business: identifies the exact part instance removed or installed for genealogy tracking. Technical: degenerate dimension from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: sn
+      transformation: DIRECT_COPY
+      transformation_logic: "sn"
+
+  - name: nha_pn
+    data_type: STRING
+    nullable: true
+    description: "Next Higher Assembly part number. Business: the parent assembly this component is installed within (e.g., engine module for an LRU). Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: nha_pn
+      transformation: DIRECT_COPY
+      transformation_logic: "nha_pn"
+
+  - name: nha_sn
+    data_type: STRING
+    nullable: true
+    description: "Next Higher Assembly serial number. Business: the specific parent assembly instance. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: nha_sn
+      transformation: DIRECT_COPY
+      transformation_logic: "nha_sn"
+
+  - name: position
+    data_type: STRING
+    nullable: true
+    description: "Installation position on the aircraft. Business: the physical location where the component is installed (e.g., ENG1, ENG2, APU). Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: position
+      transformation: DIRECT_COPY
+      transformation_logic: "position"
+
+  - name: reason_category
+    data_type: STRING
+    nullable: true
+    description: "Removal reason category. Business: why the component was removed (e.g., Failure, Scheduled, Opportunity, Modification). Technical: categorical attribute for reliability trending."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: reason_category
+      transformation: DIRECT_COPY
+      transformation_logic: "reason_category"
+
+  - name: schedule_category
+    data_type: STRING
+    nullable: true
+    description: "Schedule category classification. Business: whether the removal was scheduled or unscheduled, critical for MTBUR calculations. Technical: categorical attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: schedule_category
+      transformation: DIRECT_COPY
+      transformation_logic: "schedule_category"
+
+  - name: hours_installed
+    data_type: DECIMAL
+    nullable: true
+    description: "Flight hours the component was installed (TSI). Business: time-since-install in flight hours, critical for hours-at-failure analysis and MTBUR. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: hours_installed
+      transformation: DIRECT_COPY
+      transformation_logic: "hours_installed"
+
+  - name: minutes_installed
+    data_type: DECIMAL
+    nullable: true
+    description: "Minutes component was installed. Business: fractional hours-at-failure for precision calculations. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: minutes_installed
+      transformation: DIRECT_COPY
+      transformation_logic: "minutes_installed"
+
+  - name: cycles_installed
+    data_type: DECIMAL
+    nullable: true
+    description: "Flight cycles the component was installed (CSI). Business: cycles-since-install critical for high-cycle PNW operations and LLP tracking. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: cycles_installed
+      transformation: DIRECT_COPY
+      transformation_logic: "cycles_installed"
+
+  - name: days_installed
+    data_type: DECIMAL
+    nullable: true
+    description: "Calendar days the component was installed. Business: elapsed time on wing for calendar-limited parts. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: days_installed
+      transformation: DIRECT_COPY
+      transformation_logic: "days_installed"
+
+  - name: qty
+    data_type: DECIMAL
+    nullable: true
+    description: "Quantity of units in this transaction. Business: number of items removed or installed (usually 1 for serialized parts). Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: qty
+      transformation: DIRECT_COPY
+      transformation_logic: "qty"
+
+  - name: defect_type
+    data_type: STRING
+    nullable: true
+    description: "Associated defect type code. Business: links this removal to a defect record for root cause tracing. Technical: degenerate dimension from Silver, FK-like to fact_defect."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: defect_type
+      transformation: DIRECT_COPY
+      transformation_logic: "defect_type"
+
+  - name: defect
+    data_type: STRING
+    nullable: true
+    description: "Associated defect number. Business: specific defect identifier linking removal to defect report. Technical: degenerate dimension from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: defect
+      transformation: DIRECT_COPY
+      transformation_logic: "defect"
+
+  - name: wo
+    data_type: DECIMAL
+    nullable: true
+    description: "Work order number. Business: the maintenance work order authorizing this component swap. Technical: degenerate dimension from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: wo
+      transformation: DIRECT_COPY
+      transformation_logic: "wo"
+
+  - name: tag_no
+    data_type: STRING
+    nullable: true
+    description: "Component tag number. Business: the removal/serviceable tag attached to the physical part. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: tag_no
+      transformation: DIRECT_COPY
+      transformation_logic: "tag_no"
+
+  - name: removal_reason
+    data_type: STRING
+    nullable: true
+    description: "Detailed removal reason text. Business: free-text explanation of why the component was removed. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: removal_reason
+      transformation: DIRECT_COPY
+      transformation_logic: "removal_reason"
+
+  - name: status
+    data_type: STRING
+    nullable: true
+    description: "Transaction status. Business: current processing state of this transaction record. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_ac_pn_transaction_history
+      silver_column: status
+      transformation: DIRECT_COPY
+      transformation_logic: "status"

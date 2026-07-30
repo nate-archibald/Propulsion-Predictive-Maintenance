@@ -1,0 +1,121 @@
+table_name: qx_ppmtx_gold_dim_date
+entity_type: dimension
+domain: common
+scd_type: null
+business_key: ["calendar_date"]
+description: "Standard calendar date dimension for time-based analysis. Business: enables trending, period-over-period comparison, and time-window filtering across all propulsion maintenance facts. Technical: generated dimension covering the operational date range, conformed across all fact tables via date key joins."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "common"
+  entity_type: "dimension"
+
+unknown_member:
+  dim_date_key: -1
+  calendar_date: "1900-01-01"
+  year: -1
+  quarter: -1
+  month: -1
+  week_of_year: -1
+  day_of_month: -1
+  day_name: "Unknown"
+  month_name: "Unknown"
+
+primary_key: ["dim_date_key"]
+
+columns:
+  - name: dim_date_key
+    data_type: INT
+    nullable: false
+    description: "Date surrogate key in YYYYMMDD format. Business: integer key enabling efficient date joins across all fact tables. Technical: derived as CAST(date_format(calendar_date, 'yyyyMMdd') AS INT)."
+    lineage:
+      source_table: null
+      silver_column: null
+      transformation: GENERATED
+      transformation_logic: "CAST(date_format(calendar_date, 'yyyyMMdd') AS INT)"
+
+  - name: calendar_date
+    data_type: DATE
+    nullable: false
+    description: "Calendar date value. Business: the actual date for filtering, display, and date arithmetic. Technical: DATE type covering operational range 2015-01-01 to 2030-12-31."
+    lineage:
+      source_table: null
+      silver_column: null
+      transformation: GENERATED
+      transformation_logic: "sequence(DATE'2015-01-01', DATE'2030-12-31', INTERVAL 1 DAY)"
+
+  - name: year
+    data_type: INT
+    nullable: false
+    description: "Calendar year. Business: year for annual trending and YOY comparison. Technical: YEAR(calendar_date)."
+    lineage:
+      source_table: null
+      silver_column: null
+      transformation: GENERATED
+      transformation_logic: "YEAR(calendar_date)"
+
+  - name: quarter
+    data_type: INT
+    nullable: false
+    description: "Calendar quarter (1-4). Business: quarter for quarterly reliability reviews and board reporting. Technical: QUARTER(calendar_date)."
+    lineage:
+      source_table: null
+      silver_column: null
+      transformation: GENERATED
+      transformation_logic: "QUARTER(calendar_date)"
+
+  - name: month
+    data_type: INT
+    nullable: false
+    description: "Calendar month (1-12). Business: month for monthly reliability board reporting cadence. Technical: MONTH(calendar_date)."
+    lineage:
+      source_table: null
+      silver_column: null
+      transformation: GENERATED
+      transformation_logic: "MONTH(calendar_date)"
+
+  - name: week_of_year
+    data_type: INT
+    nullable: false
+    description: "ISO week of year (1-53). Business: week for weekly defect trending and WOW comparison. Technical: WEEKOFYEAR(calendar_date)."
+    lineage:
+      source_table: null
+      silver_column: null
+      transformation: GENERATED
+      transformation_logic: "WEEKOFYEAR(calendar_date)"
+
+  - name: day_of_month
+    data_type: INT
+    nullable: false
+    description: "Day of month (1-31). Business: day for daily operational reporting. Technical: DAY(calendar_date)."
+    lineage:
+      source_table: null
+      silver_column: null
+      transformation: GENERATED
+      transformation_logic: "DAY(calendar_date)"
+
+  - name: day_name
+    data_type: STRING
+    nullable: false
+    description: "Day of week name. Business: day name for day-of-week pattern analysis in maintenance scheduling. Technical: date_format(calendar_date, 'EEEE')."
+    lineage:
+      source_table: null
+      silver_column: null
+      transformation: GENERATED
+      transformation_logic: "date_format(calendar_date, 'EEEE')"
+
+  - name: month_name
+    data_type: STRING
+    nullable: false
+    description: "Month name. Business: month name for readable report headers and Genie responses. Technical: date_format(calendar_date, 'MMMM')."
+    lineage:
+      source_table: null
+      silver_column: null
+      transformation: GENERATED
+      transformation_logic: "date_format(calendar_date, 'MMMM')"
