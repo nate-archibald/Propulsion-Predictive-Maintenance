@@ -1,4 +1,5 @@
 {
+  "_WARNING": "LOCAL FILE IS STALE — benchmark questions, instructions, and sample questions were updated directly in Databricks (July 2026). Do NOT re-deploy from this file without first reconciling with live spaces: Propulsion Reliability (01f1763c5f6c1b2789524816da865544), Inventory & Supply Chain (01f1763c5fae192d844fb99df96a6a24). The Genie API does not expose serialized_space on GET, so manual export is required.",
   "version": 2,
   "spaces": [
     {

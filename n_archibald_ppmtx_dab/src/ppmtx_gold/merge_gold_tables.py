@@ -940,7 +940,6 @@ def merge_fact_teardown():
     source_table = get_silver_table("qx_ppmtx_pn_tear_down_report")
     target_table = get_gold_table("qx_ppmtx_gold_fact_teardown")
     dim_part_table = get_gold_table("qx_ppmtx_gold_dim_part")
-    dim_ata_table = get_gold_table("qx_ppmtx_gold_dim_ata_chapter")
 
     print(f"Merging: {target_table}")
 
@@ -953,17 +952,11 @@ def merge_fact_teardown():
 
     # Load dimension lookups
     dim_part = spark.table(dim_part_table).select("dim_part_key", "pn")
-    dim_ata = spark.table(dim_ata_table).select("dim_ata_chapter_key", "chapter", "section", "paragraph")
 
     # Join and build Gold columns
     gold_df = (
         silver_df
         .join(dim_part, silver_df["pn"] == dim_part["pn"], "left")
-        .join(
-            dim_ata,
-            (silver_df["defect_type"].isNotNull()),  # Only join if defect linkage exists
-            "left"
-        )
         .withColumn(
             "fact_teardown_key",
             F.abs(F.hash(concat_ws("||",

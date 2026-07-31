@@ -1,0 +1,5277 @@
+{
+  "datasets": [
+    {
+      "name": "ds_reason_breakdown",
+      "displayName": "Reason Breakdown",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(f.reason_category, 'Unknown') AS reason_category,\n",
+        "  COUNT(*) AS removal_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  reason_category\n",
+        "ORDER BY\n",
+        "  removal_count DESC"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_removal_trend_weekly",
+      "displayName": "Removal Trend Weekly",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('WEEK', d.calendar_date) AS week_start,\n",
+        "  COUNT(*) AS removal_count,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.schedule_category = 'Unscheduled' THEN 1\n",
+        "    END\n",
+        "  ) AS unscheduled_count,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.schedule_category = 'Scheduled' THEN 1\n",
+        "    END\n",
+        "  ) AS scheduled_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  -- Excluded: week of Nov 24, 2025 contained 4,506 records bulk-loaded with the TRAX\n",
+        "  -- initial export date as the transaction date (vs. normal baseline of ~8\u201332/week).\n",
+        "  AND NOT (d.calendar_date BETWEEN '2025-11-24' AND '2025-11-30')\n",
+        "GROUP BY\n",
+        "  DATE_TRUNC('WEEK', d.calendar_date)\n",
+        "ORDER BY\n",
+        "  week_start"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_reliability_kpis",
+      "displayName": "Reliability KPIs",
+      "queryLines": [
+        "SELECT\n",
+        "  COUNT(*) AS removal_count,\n",
+        "  AVG(f.hours_installed) AS avg_hours_at_removal,\n",
+        "  AVG(f.cycles_installed) AS avg_cycles_at_removal,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.schedule_category = 'Unscheduled' THEN 1\n",
+        "    END\n",
+        "  ) AS unscheduled_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_sched_unsched_trend",
+      "displayName": "Scheduled vs Unscheduled Trend",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date) AS month_start,\n",
+        "  f.schedule_category,\n",
+        "  COUNT(*) AS removal_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  AND f.schedule_category IS NOT NULL\n",
+        "GROUP BY\n",
+        "  month_start,\n",
+        "  f.schedule_category\n",
+        "ORDER BY\n",
+        "  month_start"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_removal_by_tail",
+      "displayName": "Removals by Tail",
+      "queryLines": [
+        "SELECT\n",
+        "  a.ac AS aircraft,\n",
+        "  a.aircraft_type,\n",
+        "  COUNT(*) AS removal_count,\n",
+        "  COALESCE(AVG(f.hours_installed), 0) AS avg_hours\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_aircraft a\n",
+        "      ON f.dim_aircraft_key = a.dim_aircraft_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  a.ac,\n",
+        "  a.aircraft_type\n",
+        "ORDER BY\n",
+        "  removal_count DESC\n",
+        "LIMIT 10"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_removals_by_ata",
+      "displayName": "Removals by ATA",
+      "queryLines": [
+        "SELECT\n",
+        "  c.chapter_description,\n",
+        "  COUNT(*) AS removal_count,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.schedule_category = 'Unscheduled' THEN 1\n",
+        "    END\n",
+        "  ) AS unscheduled_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter c\n",
+        "      ON f.dim_ata_chapter_key = c.dim_ata_chapter_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  c.chapter_description\n",
+        "ORDER BY\n",
+        "  removal_count DESC\n",
+        "LIMIT 10"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_removals_by_station",
+      "displayName": "Removals by Station",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(s.station_name, s.station_code) AS station,\n",
+        "  COUNT(*) AS removal_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_station s\n",
+        "      ON f.dim_station_key = s.dim_station_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  station\n",
+        "ORDER BY\n",
+        "  removal_count DESC"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_mtbur_by_part",
+      "displayName": "MTBUR by Part",
+      "queryLines": [
+        "SELECT\n",
+        "  p.pn,\n",
+        "  COALESCE(p.pn_description, p.pn) AS part_name,\n",
+        "  AVG(f.hours_installed) AS mtbur_hours,\n",
+        "  COUNT(*) AS removal_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part p\n",
+        "      ON f.dim_part_key = p.dim_part_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  AND f.hours_installed IS NOT NULL\n",
+        "GROUP BY\n",
+        "  p.pn,\n",
+        "  p.pn_description\n",
+        "ORDER BY\n",
+        "  mtbur_hours ASC\n",
+        "LIMIT 15"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_defect_trend_weekly",
+      "displayName": "Defect Trend Weekly",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('WEEK', d.calendar_date) AS week_start,\n",
+        "  COUNT(*) AS defect_count,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.delay = 'Y' THEN 1\n",
+        "    END\n",
+        "  ) AS delay_events\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.reported_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  DATE_TRUNC('WEEK', d.calendar_date)\n",
+        "ORDER BY\n",
+        "  week_start"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_defect_part_linkage",
+      "displayName": "Defect-Part Linkage",
+      "queryLines": [
+        "SELECT\n",
+        "  COUNT(DISTINCT f.fact_defect_key) AS total_defects,\n",
+        "  COUNT(DISTINCT b.bridge_defect_part_key) AS linked_defects,\n",
+        "  COALESCE(\n",
+        "    COUNT(DISTINCT b.bridge_defect_part_key) * 1.0 / NULLIF(COUNT(DISTINCT f.fact_defect_key), 0),\n",
+        "    0\n",
+        "  ) AS linkage_rate\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    LEFT JOIN ${catalog}.${gold_schema}.vw_prop_bridge_defect_part b\n",
+        "      ON f.defect_type = b.defect_type\n",
+        "      AND f.defect = b.defect\n",
+        "      AND f.defect_item = b.defect_item\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.reported_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_cancellation_trend",
+      "displayName": "Cancellation Trend",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date) AS month_start,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.cancellation = 'Y' THEN 1\n",
+        "    END\n",
+        "  ) AS cancellation_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.reported_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date)\n",
+        "ORDER BY\n",
+        "  month_start"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_deferral_analysis",
+      "displayName": "Deferral Analysis",
+      "queryLines": [
+        "SELECT\n",
+        "  CASE\n",
+        "    WHEN f.mel = 'Y' THEN 'MEL Deferral'\n",
+        "    WHEN f.defer = 'Y' THEN 'Non-MEL Deferral'\n",
+        "    ELSE 'No Deferral'\n",
+        "  END AS deferral_type,\n",
+        "  f.status,\n",
+        "  COUNT(*) AS defect_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.reported_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  deferral_type,\n",
+        "  f.status\n",
+        "ORDER BY\n",
+        "  defect_count DESC"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_top_ata_by_delays",
+      "displayName": "Top ATA by Delays",
+      "queryLines": [
+        "SELECT\n",
+        "  c.chapter_description,\n",
+        "  COALESCE(SUM(f.delay_minutes), 0) AS delay_minutes\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter c\n",
+        "      ON f.dim_ata_chapter_key = c.dim_ata_chapter_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.reported_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  AND f.delay = 'Y'\n",
+        "GROUP BY\n",
+        "  c.chapter_description\n",
+        "ORDER BY\n",
+        "  delay_minutes DESC\n",
+        "LIMIT 10"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_recent_defects",
+      "displayName": "Recent Defects",
+      "queryLines": [
+        "SELECT\n",
+        "  f.defect_type,\n",
+        "  f.defect,\n",
+        "  f.defect_description,\n",
+        "  a.ac AS aircraft,\n",
+        "  c.chapter,\n",
+        "  c.chapter_description,\n",
+        "  d.calendar_date AS reported_date,\n",
+        "  f.status,\n",
+        "  f.delay_minutes,\n",
+        "  f.cancellation,\n",
+        "  f.i_f_s_d AS ifsd\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_aircraft a\n",
+        "      ON f.dim_aircraft_key = a.dim_aircraft_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter c\n",
+        "      ON f.dim_ata_chapter_key = c.dim_ata_chapter_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.reported_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "ORDER BY\n",
+        "  d.calendar_date DESC"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-30d/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_defect_kpis",
+      "displayName": "Defect KPIs",
+      "queryLines": [
+        "SELECT\n",
+        "  COUNT(*) AS total_defects,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.delay = 'Y' THEN 1\n",
+        "    END\n",
+        "  ) AS delay_events,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.cancellation = 'Y' THEN 1\n",
+        "    END\n",
+        "  ) AS cancellations,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.i_f_s_d = 'Y' THEN 1\n",
+        "    END\n",
+        "  ) AS ifsds,\n",
+        "  COALESCE(SUM(f.delays_hours), 0) AS total_delay_hours,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN\n",
+        "        f.defer = 'Y'\n",
+        "        OR f.mel = 'Y'\n",
+        "      THEN\n",
+        "        1\n",
+        "    END\n",
+        "  ) AS deferrals\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.reported_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_spare_by_station",
+      "displayName": "Spare by Station",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(st.station_name, st.station_code) AS station,\n",
+        "  s.condition,\n",
+        "  COUNT(*) AS instance_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_inventory_snapshot s\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_station st\n",
+        "      ON s.dim_station_key = st.dim_station_key\n",
+        "WHERE\n",
+        "  st.station_code IS NOT NULL\n",
+        "GROUP BY\n",
+        "  station,\n",
+        "  s.condition\n",
+        "ORDER BY\n",
+        "  instance_count DESC"
+      ]
+    },
+    {
+      "name": "ds_inventory_movement",
+      "displayName": "Inventory Movement",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date) AS month_start,\n",
+        "  t.transaction_type,\n",
+        "  COUNT(*) AS transaction_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_inventory_transaction t\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON t.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  month_start,\n",
+        "  t.transaction_type\n",
+        "ORDER BY\n",
+        "  month_start"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_stockout_risk",
+      "displayName": "Stock-Out Risk",
+      "queryLines": [
+        "SELECT\n",
+        "  p.pn,\n",
+        "  COALESCE(p.pn_description, p.pn) AS part_name,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN s.condition = 'SVC' THEN 1\n",
+        "    END\n",
+        "  ) AS serviceable_qty,\n",
+        "  COUNT(*) AS total_qty\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_inventory_snapshot s\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part p\n",
+        "      ON s.dim_part_key = p.dim_part_key\n",
+        "GROUP BY\n",
+        "  p.pn,\n",
+        "  p.pn_description\n",
+        "HAVING\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN s.condition = 'SVC' THEN 1\n",
+        "    END\n",
+        "  ) < 3\n",
+        "ORDER BY\n",
+        "  serviceable_qty ASC"
+      ]
+    },
+    {
+      "name": "ds_inventory_kpis",
+      "displayName": "Inventory KPIs",
+      "queryLines": [
+        "SELECT\n",
+        "  COUNT(*) AS total_instances,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN s.condition = 'SVC' THEN 1\n",
+        "    END\n",
+        "  ) AS serviceable_count,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN s.condition = 'AOG' THEN 1\n",
+        "    END\n",
+        "  ) AS aog_count,\n",
+        "  COALESCE(SUM(s.unit_cost), 0) AS total_value\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_inventory_snapshot s"
+      ]
+    },
+    {
+      "name": "ds_condition_distribution",
+      "displayName": "Condition Distribution",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(s.condition, 'Unknown') AS condition,\n",
+        "  COUNT(*) AS instance_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_inventory_snapshot s\n",
+        "GROUP BY\n",
+        "  s.condition"
+      ]
+    },
+    {
+      "name": "ds_aog_parts",
+      "displayName": "AOG Parts",
+      "queryLines": [
+        "SELECT\n",
+        "  p.pn,\n",
+        "  COALESCE(p.pn_description, p.pn) AS part_name,\n",
+        "  s.sn,\n",
+        "  COALESCE(st.station_name, st.station_code) AS station\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_inventory_snapshot s\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part p\n",
+        "      ON s.dim_part_key = p.dim_part_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_station st\n",
+        "      ON s.dim_station_key = st.dim_station_key\n",
+        "WHERE\n",
+        "  s.condition = 'AOG'"
+      ]
+    },
+    {
+      "name": "ds_llp_redline",
+      "displayName": "LLP Red-Line",
+      "queryLines": [
+        "SELECT\n",
+        "  p.pn,\n",
+        "  COALESCE(p.pn_description, p.pn) AS part_name,\n",
+        "  c.sn,\n",
+        "  c.control AS control_type,\n",
+        "  c.remaining_cycles,\n",
+        "  c.remaining_hours,\n",
+        "  c.schedule_cycles AS limit_cycles,\n",
+        "  c.schedule_hours AS limit_hours\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_inventory_control c\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part p\n",
+        "      ON c.dim_part_key = p.dim_part_key\n",
+        "WHERE\n",
+        "  (\n",
+        "    c.remaining_cycles IS NOT NULL\n",
+        "    AND c.remaining_cycles < 1000\n",
+        "  )\n",
+        "  OR (\n",
+        "    c.remaining_hours IS NOT NULL\n",
+        "    AND c.remaining_hours < 2000\n",
+        "  )\n",
+        "ORDER BY\n",
+        "  c.remaining_cycles ASC"
+      ]
+    },
+    {
+      "name": "ds_top_shop_findings",
+      "displayName": "Top Shop Findings",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(c.chapter_description, CAST(c.chapter AS STRING)) AS finding_category,\n",
+        "  COUNT(*) AS finding_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_teardown t\n",
+        "    LEFT JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter c\n",
+        "      ON t.dim_ata_chapter_key = c.dim_ata_chapter_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON t.created_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  finding_category\n",
+        "ORDER BY\n",
+        "  finding_count DESC\n",
+        "LIMIT 10"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_lead_time_trend",
+      "displayName": "Lead Time Trend",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date) AS month_start,\n",
+        "  AVG(o.lead_time) AS avg_lead_time\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_order o\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON o.order_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  AND o.lead_time IS NOT NULL\n",
+        "GROUP BY\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date)\n",
+        "ORDER BY\n",
+        "  month_start"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_order_status_by_type",
+      "displayName": "Order Status by Type",
+      "queryLines": [
+        "SELECT\n",
+        "  o.order_type,\n",
+        "  o.status,\n",
+        "  COUNT(*) AS order_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_order o\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON o.order_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  AND o.order_type IS NOT NULL\n",
+        "  AND o.status IS NOT NULL\n",
+        "GROUP BY\n",
+        "  o.order_type,\n",
+        "  o.status\n",
+        "ORDER BY\n",
+        "  order_count DESC"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_overdue_orders",
+      "displayName": "Overdue Orders",
+      "queryLines": [
+        "SELECT\n",
+        "  o.order_type,\n",
+        "  o.order_number,\n",
+        "  o.order_line,\n",
+        "  p.pn,\n",
+        "  COALESCE(p.pn_description, p.pn) AS part_name,\n",
+        "  o.status,\n",
+        "  o.lead_time,\n",
+        "  o.qty_require,\n",
+        "  o.qty_received,\n",
+        "  o.exchange_repair_cost\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_order o\n",
+        "    LEFT JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part p\n",
+        "      ON o.dim_part_key = p.dim_part_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON o.order_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  o.status = 'Open'\n",
+        "  AND o.lead_time > 30\n",
+        "ORDER BY\n",
+        "  o.lead_time DESC"
+      ]
+    },
+    {
+      "name": "ds_fulfillment_trend",
+      "displayName": "Fulfillment Trend",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date) AS month_start,\n",
+        "  SUM(o.qty_received) * 1.0 / NULLIF(SUM(o.qty_require), 0) AS fulfillment_rate\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_order o\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON o.order_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date)\n",
+        "ORDER BY\n",
+        "  month_start"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_repair_cost_quarterly",
+      "displayName": "Repair Cost Quarterly",
+      "queryLines": [
+        "SELECT\n",
+        "  order_type,\n",
+        "  DATE_TRUNC('QUARTER', d.calendar_date) AS quarter_start,\n",
+        "  SUM(o.exchange_repair_cost) AS repair_cost\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_order o\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON o.order_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  AND o.exchange_repair_cost IS NOT NULL\n",
+        "GROUP BY\n",
+        "  order_type,\n",
+        "  DATE_TRUNC('QUARTER', d.calendar_date)\n",
+        "ORDER BY\n",
+        "  quarter_start"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_procurement_kpis",
+      "displayName": "Procurement KPIs",
+      "queryLines": [
+        "SELECT\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN o.status = 'Open' THEN 1\n",
+        "    END\n",
+        "  ) AS open_orders,\n",
+        "  COALESCE(SUM(o.exchange_repair_cost), 0) AS total_repair_cost,\n",
+        "  AVG(o.lead_time) AS avg_lead_time,\n",
+        "  COALESCE(SUM(o.qty_received) * 1.0 / NULLIF(SUM(o.qty_require), 0), 0) AS fulfillment_rate\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_order o\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON o.order_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_exec_defect_kpis",
+      "displayName": "Exec Defect KPIs",
+      "queryLines": [
+        "SELECT\n",
+        "  COUNT(*) AS total_defects,\n",
+        "  COALESCE(SUM(f.delays_hours), 0) AS total_delay_hours,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.cancellation = 'Y' THEN 1\n",
+        "    END\n",
+        "  ) AS cancellations,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN f.i_f_s_d = 'Y' THEN 1\n",
+        "    END\n",
+        "  ) AS ifsds\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.reported_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_mtbur_trend",
+      "displayName": "MTBUR Trend",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date) AS month_start,\n",
+        "  AVG(f.hours_installed) AS fleet_mtbur\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  AND f.hours_installed IS NOT NULL\n",
+        "GROUP BY\n",
+        "  DATE_TRUNC('MONTH', d.calendar_date)\n",
+        "ORDER BY\n",
+        "  month_start"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_top_pn_cancellations",
+      "displayName": "Top P/N Unscheduled Removals",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(p.pn_description, p.pn) AS part_name,\n",
+        "  COUNT(*) AS removal_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part p\n",
+        "      ON f.dim_part_key = p.dim_part_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  AND f.schedule_category = 'Unscheduled'\n",
+        "GROUP BY\n",
+        "  part_name\n",
+        "ORDER BY\n",
+        "  removal_count DESC\n",
+        "LIMIT 10"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_mtbur_kpi",
+      "displayName": "MTBUR KPI",
+      "queryLines": [
+        "SELECT\n",
+        "  AVG(f.hours_installed) AS fleet_mtbur\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  AND f.hours_installed IS NOT NULL"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_exec_defect_trend_weekly",
+      "displayName": "Exec Defect Trend Weekly",
+      "queryLines": [
+        "SELECT\n",
+        "  DATE_TRUNC('WEEK', d.calendar_date) AS week_start,\n",
+        "  COUNT(*) AS defect_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.reported_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "GROUP BY\n",
+        "  DATE_TRUNC('WEEK', d.calendar_date)\n",
+        "ORDER BY\n",
+        "  week_start"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_exec_top_ata_delays",
+      "displayName": "Exec Top ATA Delays",
+      "queryLines": [
+        "SELECT\n",
+        "  c.chapter_description,\n",
+        "  COALESCE(SUM(f.delay_minutes), 0) AS delay_minutes\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter c\n",
+        "      ON f.dim_ata_chapter_key = c.dim_ata_chapter_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.reported_date_key = d.dim_date_key\n",
+        "WHERE\n",
+        "  d.calendar_date >= :date_range.min\n",
+        "  AND d.calendar_date <= :date_range.max\n",
+        "  AND f.delay = 'Y'\n",
+        "GROUP BY\n",
+        "  c.chapter_description\n",
+        "ORDER BY\n",
+        "  delay_minutes DESC\n",
+        "LIMIT 10"
+      ],
+      "parameters": [
+        {
+          "displayName": "Date Range",
+          "keyword": "date_range",
+          "dataType": "DATE",
+          "complexType": "RANGE",
+          "defaultSelection": {
+            "range": {
+              "dataType": "DATE",
+              "min": {
+                "value": "now-1y/d"
+              },
+              "max": {
+                "value": "now/d"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ds_dq_scorecard",
+      "displayName": "DQ Scorecard",
+      "queryLines": [
+        "SELECT\n",
+        "  'Defect-Part Linkage' AS metric,\n",
+        "  COALESCE(\n",
+        "    COUNT(DISTINCT b.bridge_defect_part_key) * 1.0 / NULLIF(COUNT(DISTINCT f.fact_defect_key), 0),\n",
+        "    0\n",
+        "  ) AS score\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_defect f\n",
+        "    LEFT JOIN ${catalog}.${gold_schema}.vw_prop_bridge_defect_part b\n",
+        "      ON f.defect_type = b.defect_type\n",
+        "      AND f.defect = b.defect\n",
+        "      AND f.defect_item = b.defect_item"
+      ]
+    },
+    {
+      "name": "ds_inventory_health",
+      "displayName": "Inventory Health",
+      "queryLines": [
+        "SELECT\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN s.condition = 'SVC' THEN 1\n",
+        "    END\n",
+        "  )\n",
+        "    * 1.0\n",
+        "    / NULLIF(COUNT(*), 0) AS serviceable_ratio,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN s.condition = 'AOG' THEN 1\n",
+        "    END\n",
+        "  ) AS aog_count,\n",
+        "  COUNT(*) AS total_instances\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_inventory_snapshot s"
+      ]
+    },
+    {
+      "name": "ds_filter_ata_chapters",
+      "displayName": "Filter ATA Chapters",
+      "queryLines": [
+        "SELECT DISTINCT\n",
+        "  chapter_description\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter\n",
+        "WHERE\n",
+        "  chapter_description IS NOT NULL\n",
+        "ORDER BY\n",
+        "  chapter_description"
+      ]
+    },
+    {
+      "name": "ds_filter_stations",
+      "displayName": "Filter Stations",
+      "queryLines": [
+        "SELECT DISTINCT\n",
+        "  station_code\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_station\n",
+        "WHERE\n",
+        "  station_code IS NOT NULL\n",
+        "ORDER BY\n",
+        "  station_code"
+      ]
+    },
+    {
+      "name": "ds_filter_part_numbers",
+      "displayName": "Filter Part Numbers",
+      "queryLines": [
+        "SELECT DISTINCT\n",
+        "  pn,\n",
+        "  COALESCE(pn_description, pn) AS pn_label\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part\n",
+        "WHERE\n",
+        "  pn IS NOT NULL\n",
+        "ORDER BY\n",
+        "  pn"
+      ]
+    },
+    {
+      "name": "ds_filter_aircraft",
+      "displayName": "Filter Aircraft",
+      "queryLines": [
+        "SELECT DISTINCT\n",
+        "  ac\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_aircraft\n",
+        "WHERE\n",
+        "  ac IS NOT NULL\n",
+        "ORDER BY\n",
+        "  ac"
+      ]
+    },
+    {
+      "name": "ds_dec29_spike_detail",
+      "displayName": "Dec 15-22 Spike Detail",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(p.pn_description, p.pn) AS part_name,\n",
+        "  p.pn,\n",
+        "  c.chapter_description,\n",
+        "  f.schedule_category,\n",
+        "  COALESCE(f.reason_category, 'Unknown') AS reason_category,\n",
+        "  COUNT(*) AS removal_count\n",
+        "FROM\n",
+        "  ${catalog}.${gold_schema}.vw_prop_fact_component_removal f\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d\n",
+        "      ON f.transaction_date_key = d.dim_date_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part p\n",
+        "      ON f.dim_part_key = p.dim_part_key\n",
+        "    JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter c\n",
+        "      ON f.dim_ata_chapter_key = c.dim_ata_chapter_key\n",
+        "WHERE\n",
+        "  d.calendar_date BETWEEN '2025-12-15' AND '2025-12-28'\n",
+        "GROUP BY\n",
+        "  ALL\n",
+        "ORDER BY\n",
+        "  removal_count DESC\n",
+        "LIMIT 25"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "764de3b8",
+      "displayName": "Propulsion Reliability",
+      "layout": [
+        {
+          "widget": {
+            "name": "total_removals",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability_kpis",
+                  "fields": [
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`removal_count`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Removals",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "removal_count"
+                },
+                "period": {
+                  "fieldName": "removal_count"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "avg_hours",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability_kpis",
+                  "fields": [
+                    {
+                      "name": "avg_hours_at_removal",
+                      "expression": "`avg_hours_at_removal`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`avg_hours_at_removal`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Avg Hours at Removal",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_hours_at_removal"
+                },
+                "period": {
+                  "fieldName": "avg_hours_at_removal"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "unscheduled_removals",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reliability_kpis",
+                  "fields": [
+                    {
+                      "name": "unscheduled_count",
+                      "expression": "`unscheduled_count`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`unscheduled_count`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Unscheduled Removals",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "unscheduled_count"
+                },
+                "period": {
+                  "fieldName": "unscheduled_count"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "removal_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_removal_trend_weekly",
+                  "fields": [
+                    {
+                      "name": "week_start",
+                      "expression": "`week_start`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "title": "Removal Volume Trend (Weekly)",
+                "showTitle": true,
+                "description": "\u26a0 Week of Nov 24, 2025: 4,506 records (~200\u00d7 normal baseline of 8\u201332/week) were bulk-loaded with the TRAX initial export date as the transaction date. Excluded from this chart. Confirm with TRAX team before removing the exclusion in ds_removal_trend_weekly.",
+                "showDescription": true
+              },
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "week_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "removal_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "mtbur_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mtbur_by_part",
+                  "fields": [
+                    {
+                      "name": "part_name",
+                      "expression": "`part_name`"
+                    },
+                    {
+                      "name": "mtbur_hours",
+                      "expression": "`mtbur_hours`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "MTBUR by Top Part Numbers",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "part_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "mtbur_hours",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "removals_ata",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_removals_by_ata",
+                  "fields": [
+                    {
+                      "name": "chapter_description",
+                      "expression": "`chapter_description`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Removals by ATA Chapter",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "chapter_description",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "removal_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "removals_station",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_removals_by_station",
+                  "fields": [
+                    {
+                      "name": "station",
+                      "expression": "`station`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Removals by Station",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "station",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "removal_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "sched_unsched_area",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_sched_unsched_trend",
+                  "fields": [
+                    {
+                      "name": "schedule_category",
+                      "expression": "`schedule_category`"
+                    },
+                    {
+                      "name": "month_start",
+                      "expression": "`month_start`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Scheduled vs Unscheduled Ratio Trend",
+                "showTitle": true
+              },
+              "mark": {
+                "layout": "stack"
+              },
+              "widgetType": "area",
+              "encodings": {
+                "x": {
+                  "fieldName": "month_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "removal_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "schedule_category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 14,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "reason_pie",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_reason_breakdown",
+                  "fields": [
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    },
+                    {
+                      "name": "reason_category",
+                      "expression": "`reason_category`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Removal Reason Breakdown",
+                "showTitle": true
+              },
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "removal_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "reason_category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 14,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top_aircraft_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_removal_by_tail",
+                  "fields": [
+                    {
+                      "name": "aircraft",
+                      "expression": "`aircraft`"
+                    },
+                    {
+                      "name": "aircraft_type",
+                      "expression": "`aircraft_type`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    },
+                    {
+                      "name": "avg_hours",
+                      "expression": "`avg_hours`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Top 10 Aircraft by Removals",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "aircraft"
+                  },
+                  {
+                    "fieldName": "aircraft_type"
+                  },
+                  {
+                    "fieldName": "removal_count"
+                  },
+                  {
+                    "fieldName": "avg_hours"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 20,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "dec29_spike_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_dec29_spike_detail",
+                  "fields": [
+                    {
+                      "name": "part_name",
+                      "expression": "`part_name`"
+                    },
+                    {
+                      "name": "pn",
+                      "expression": "`pn`"
+                    },
+                    {
+                      "name": "chapter_description",
+                      "expression": "`chapter_description`"
+                    },
+                    {
+                      "name": "schedule_category",
+                      "expression": "`schedule_category`"
+                    },
+                    {
+                      "name": "reason_category",
+                      "expression": "`reason_category`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Dec 15-22 Spike Detail",
+                "showTitle": true,
+                "description": "311 removals in 2 weeks (vs ~8\u201332/week baseline). Grouped by part, ATA chapter, schedule type, and reason.",
+                "showDescription": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "part_name"
+                  },
+                  {
+                    "fieldName": "pn"
+                  },
+                  {
+                    "fieldName": "chapter_description"
+                  },
+                  {
+                    "fieldName": "schedule_category"
+                  },
+                  {
+                    "fieldName": "reason_category"
+                  },
+                  {
+                    "fieldName": "removal_count"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 25,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "inventory_spares",
+      "displayName": "Inventory & Spares",
+      "layout": [
+        {
+          "widget": {
+            "name": "total_instances",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory_kpis",
+                  "fields": [
+                    {
+                      "name": "total_instances",
+                      "expression": "`total_instances`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`total_instances`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Instances",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_instances"
+                },
+                "period": {
+                  "fieldName": "total_instances"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "serviceable",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory_kpis",
+                  "fields": [
+                    {
+                      "name": "serviceable_count",
+                      "expression": "`serviceable_count`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`serviceable_count`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Serviceable",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "serviceable_count"
+                },
+                "period": {
+                  "fieldName": "serviceable_count"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "aog",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory_kpis",
+                  "fields": [
+                    {
+                      "name": "aog_count",
+                      "expression": "`aog_count`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`aog_count`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "AOG",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "aog_count"
+                },
+                "period": {
+                  "fieldName": "aog_count"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "total_value",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory_kpis",
+                  "fields": [
+                    {
+                      "name": "total_value",
+                      "expression": "`total_value`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`total_value`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Value",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_value",
+                  "format": {
+                    "type": "number-currency",
+                    "abbreviation": "compact",
+                    "currencyCode": "USD"
+                  }
+                },
+                "period": {
+                  "fieldName": "total_value"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "spare_station",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_spare_by_station",
+                  "fields": [
+                    {
+                      "name": "condition",
+                      "expression": "`condition`"
+                    },
+                    {
+                      "name": "station",
+                      "expression": "`station`"
+                    },
+                    {
+                      "name": "instance_count",
+                      "expression": "`instance_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Spare Availability by Station",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "station",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "instance_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "condition",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "condition_pie",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_condition_distribution",
+                  "fields": [
+                    {
+                      "name": "instance_count",
+                      "expression": "`instance_count`"
+                    },
+                    {
+                      "name": "condition",
+                      "expression": "`condition`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Condition Code Distribution",
+                "showTitle": true
+              },
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "instance_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "condition",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "stockout_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_stockout_risk",
+                  "fields": [
+                    {
+                      "name": "pn",
+                      "expression": "`pn`"
+                    },
+                    {
+                      "name": "part_name",
+                      "expression": "`part_name`"
+                    },
+                    {
+                      "name": "serviceable_qty",
+                      "expression": "`serviceable_qty`"
+                    },
+                    {
+                      "name": "total_qty",
+                      "expression": "`total_qty`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Stock-Out Risk",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "pn"
+                  },
+                  {
+                    "fieldName": "part_name"
+                  },
+                  {
+                    "fieldName": "serviceable_qty"
+                  },
+                  {
+                    "fieldName": "total_qty"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "movement_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory_movement",
+                  "fields": [
+                    {
+                      "name": "transaction_type",
+                      "expression": "`transaction_type`"
+                    },
+                    {
+                      "name": "month_start",
+                      "expression": "`month_start`"
+                    },
+                    {
+                      "name": "transaction_count",
+                      "expression": "`transaction_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Inventory Movement Trend",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "transaction_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "transaction_type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 9,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "llp_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_llp_redline",
+                  "fields": [
+                    {
+                      "name": "pn",
+                      "expression": "`pn`"
+                    },
+                    {
+                      "name": "part_name",
+                      "expression": "`part_name`"
+                    },
+                    {
+                      "name": "sn",
+                      "expression": "`sn`"
+                    },
+                    {
+                      "name": "control_type",
+                      "expression": "`control_type`"
+                    },
+                    {
+                      "name": "remaining_cycles",
+                      "expression": "`remaining_cycles`"
+                    },
+                    {
+                      "name": "remaining_hours",
+                      "expression": "`remaining_hours`"
+                    },
+                    {
+                      "name": "limit_cycles",
+                      "expression": "`limit_cycles`"
+                    },
+                    {
+                      "name": "limit_hours",
+                      "expression": "`limit_hours`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "LLP Red-Line Fleet Scan",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "pn"
+                  },
+                  {
+                    "fieldName": "part_name"
+                  },
+                  {
+                    "fieldName": "sn"
+                  },
+                  {
+                    "fieldName": "control_type"
+                  },
+                  {
+                    "fieldName": "remaining_cycles"
+                  },
+                  {
+                    "fieldName": "remaining_hours"
+                  },
+                  {
+                    "fieldName": "limit_cycles"
+                  },
+                  {
+                    "fieldName": "limit_hours"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "aog_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_aog_parts",
+                  "fields": [
+                    {
+                      "name": "pn",
+                      "expression": "`pn`"
+                    },
+                    {
+                      "name": "part_name",
+                      "expression": "`part_name`"
+                    },
+                    {
+                      "name": "sn",
+                      "expression": "`sn`"
+                    },
+                    {
+                      "name": "station",
+                      "expression": "`station`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Parts on AOG Hold",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "pn"
+                  },
+                  {
+                    "fieldName": "part_name"
+                  },
+                  {
+                    "fieldName": "sn"
+                  },
+                  {
+                    "fieldName": "station"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 21,
+            "width": 12,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "defect_intelligence",
+      "displayName": "Defect Intelligence",
+      "layout": [
+        {
+          "widget": {
+            "name": "total_defects",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_defect_kpis",
+                  "fields": [
+                    {
+                      "name": "total_defects",
+                      "expression": "`total_defects`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`total_defects`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Defects",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_defects"
+                },
+                "period": {
+                  "fieldName": "total_defects"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "delay_hours",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_defect_kpis",
+                  "fields": [
+                    {
+                      "name": "total_delay_hours",
+                      "expression": "`total_delay_hours`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`total_delay_hours`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Delay Hours",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_delay_hours"
+                },
+                "period": {
+                  "fieldName": "total_delay_hours"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "cancellations",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_defect_kpis",
+                  "fields": [
+                    {
+                      "name": "cancellations",
+                      "expression": "`cancellations`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`cancellations`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Cancellations",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "cancellations"
+                },
+                "period": {
+                  "fieldName": "cancellations"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ifsds",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_defect_kpis",
+                  "fields": [
+                    {
+                      "name": "ifsds",
+                      "expression": "`ifsds`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`ifsds`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "IFSDs",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "ifsds"
+                },
+                "period": {
+                  "fieldName": "ifsds"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "delay_events",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_defect_kpis",
+                  "fields": [
+                    {
+                      "name": "delay_events",
+                      "expression": "`delay_events`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`delay_events`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Delay Events",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "delay_events"
+                },
+                "period": {
+                  "fieldName": "delay_events"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "deferrals",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_defect_kpis",
+                  "fields": [
+                    {
+                      "name": "deferrals",
+                      "expression": "`deferrals`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`deferrals`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Deferrals",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "deferrals"
+                },
+                "period": {
+                  "fieldName": "deferrals"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "defect_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_defect_trend_weekly",
+                  "fields": [
+                    {
+                      "name": "week_start",
+                      "expression": "`week_start`"
+                    },
+                    {
+                      "name": "defect_count",
+                      "expression": "`defect_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Defect Volume Trend (Weekly)",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "week_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "defect_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "top_ata_delays",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_top_ata_by_delays",
+                  "fields": [
+                    {
+                      "name": "chapter_description",
+                      "expression": "`chapter_description`"
+                    },
+                    {
+                      "name": "delay_minutes",
+                      "expression": "`delay_minutes`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Top 10 ATA Sections by Delay Minutes",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "chapter_description",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "delay_minutes",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "cancellation_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_cancellation_trend",
+                  "fields": [
+                    {
+                      "name": "month_start",
+                      "expression": "`month_start`"
+                    },
+                    {
+                      "name": "cancellation_count",
+                      "expression": "`cancellation_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Cancellation Trend (Monthly)",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "month_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "cancellation_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "deferral_analysis",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_deferral_analysis",
+                  "fields": [
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "deferral_type",
+                      "expression": "`deferral_type`"
+                    },
+                    {
+                      "name": "defect_count",
+                      "expression": "`defect_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Deferral Analysis",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "deferral_type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "defect_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "status",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "linkage_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_defect_part_linkage",
+                  "fields": [
+                    {
+                      "name": "linkage_rate",
+                      "expression": "`linkage_rate`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`linkage_rate`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Defect-Part Linkage",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "linkage_rate",
+                  "format": {
+                    "type": "number-percent"
+                  }
+                },
+                "period": {
+                  "fieldName": "linkage_rate"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "recent_defects_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_recent_defects",
+                  "fields": [
+                    {
+                      "name": "defect_type",
+                      "expression": "`defect_type`"
+                    },
+                    {
+                      "name": "defect",
+                      "expression": "`defect`"
+                    },
+                    {
+                      "name": "defect_description",
+                      "expression": "`defect_description`"
+                    },
+                    {
+                      "name": "aircraft",
+                      "expression": "`aircraft`"
+                    },
+                    {
+                      "name": "chapter_description",
+                      "expression": "`chapter_description`"
+                    },
+                    {
+                      "name": "reported_date",
+                      "expression": "`reported_date`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "delay_minutes",
+                      "expression": "`delay_minutes`"
+                    },
+                    {
+                      "name": "cancellation",
+                      "expression": "`cancellation`"
+                    },
+                    {
+                      "name": "ifsd",
+                      "expression": "`ifsd`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Recent Defects",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "defect_type"
+                  },
+                  {
+                    "fieldName": "defect"
+                  },
+                  {
+                    "fieldName": "defect_description"
+                  },
+                  {
+                    "fieldName": "aircraft"
+                  },
+                  {
+                    "fieldName": "chapter_description"
+                  },
+                  {
+                    "fieldName": "reported_date"
+                  },
+                  {
+                    "fieldName": "status"
+                  },
+                  {
+                    "fieldName": "delay_minutes"
+                  },
+                  {
+                    "fieldName": "cancellation"
+                  },
+                  {
+                    "fieldName": "ifsd"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "procurement_overhaul",
+      "displayName": "Procurement & Overhaul",
+      "layout": [
+        {
+          "widget": {
+            "name": "open_orders",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_procurement_kpis",
+                  "fields": [
+                    {
+                      "name": "open_orders",
+                      "expression": "`open_orders`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`open_orders`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Open Orders",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "open_orders"
+                },
+                "period": {
+                  "fieldName": "open_orders"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "repair_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_procurement_kpis",
+                  "fields": [
+                    {
+                      "name": "total_repair_cost",
+                      "expression": "`total_repair_cost`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`total_repair_cost`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Repair Cost",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_repair_cost",
+                  "format": {
+                    "type": "number-currency",
+                    "abbreviation": "compact",
+                    "currencyCode": "USD"
+                  }
+                },
+                "period": {
+                  "fieldName": "total_repair_cost"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "avg_lead_time",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_procurement_kpis",
+                  "fields": [
+                    {
+                      "name": "avg_lead_time",
+                      "expression": "`avg_lead_time`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`avg_lead_time`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Avg Lead Time",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_lead_time"
+                },
+                "period": {
+                  "fieldName": "avg_lead_time"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "fulfillment_rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_procurement_kpis",
+                  "fields": [
+                    {
+                      "name": "fulfillment_rate",
+                      "expression": "`fulfillment_rate`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`fulfillment_rate`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Fulfillment Rate",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "fulfillment_rate",
+                  "format": {
+                    "type": "number-percent"
+                  }
+                },
+                "period": {
+                  "fieldName": "fulfillment_rate"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "order_status",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_order_status_by_type",
+                  "fields": [
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "order_type",
+                      "expression": "`order_type`"
+                    },
+                    {
+                      "name": "order_count",
+                      "expression": "`order_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Order Status by Type",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "order_type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "order_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "status",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "lead_time_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_lead_time_trend",
+                  "fields": [
+                    {
+                      "name": "month_start",
+                      "expression": "`month_start`"
+                    },
+                    {
+                      "name": "avg_lead_time",
+                      "expression": "`avg_lead_time`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Lead Time Trend",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "avg_lead_time",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "repair_cost_quarterly",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_repair_cost_quarterly",
+                  "fields": [
+                    {
+                      "name": "order_type",
+                      "expression": "`order_type`"
+                    },
+                    {
+                      "name": "quarter_start",
+                      "expression": "`quarter_start`"
+                    },
+                    {
+                      "name": "repair_cost",
+                      "expression": "`repair_cost`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Repair Cost by Quarter",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "quarter_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "repair_cost",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "order_type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "fulfillment_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_fulfillment_trend",
+                  "fields": [
+                    {
+                      "name": "month_start",
+                      "expression": "`month_start`"
+                    },
+                    {
+                      "name": "fulfillment_rate",
+                      "expression": "`fulfillment_rate`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Fulfillment Rate Trend",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "fulfillment_rate",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "shop_findings",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_top_shop_findings",
+                  "fields": [
+                    {
+                      "name": "finding_category",
+                      "expression": "`finding_category`"
+                    },
+                    {
+                      "name": "finding_count",
+                      "expression": "`finding_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Top Shop Findings",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "finding_category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "finding_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "overdue_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_overdue_orders",
+                  "fields": [
+                    {
+                      "name": "order_type",
+                      "expression": "`order_type`"
+                    },
+                    {
+                      "name": "order_number",
+                      "expression": "`order_number`"
+                    },
+                    {
+                      "name": "order_line",
+                      "expression": "`order_line`"
+                    },
+                    {
+                      "name": "pn",
+                      "expression": "`pn`"
+                    },
+                    {
+                      "name": "part_name",
+                      "expression": "`part_name`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "lead_time",
+                      "expression": "`lead_time`"
+                    },
+                    {
+                      "name": "qty_require",
+                      "expression": "`qty_require`"
+                    },
+                    {
+                      "name": "qty_received",
+                      "expression": "`qty_received`"
+                    },
+                    {
+                      "name": "exchange_repair_cost",
+                      "expression": "`exchange_repair_cost`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Overdue Orders",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "order_type"
+                  },
+                  {
+                    "fieldName": "order_number"
+                  },
+                  {
+                    "fieldName": "order_line"
+                  },
+                  {
+                    "fieldName": "pn"
+                  },
+                  {
+                    "fieldName": "part_name"
+                  },
+                  {
+                    "fieldName": "status"
+                  },
+                  {
+                    "fieldName": "lead_time"
+                  },
+                  {
+                    "fieldName": "qty_require"
+                  },
+                  {
+                    "fieldName": "qty_received"
+                  },
+                  {
+                    "fieldName": "exchange_repair_cost"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 13,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "executive_summary",
+      "displayName": "Executive Summary",
+      "layout": [
+        {
+          "widget": {
+            "name": "total_defects",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_exec_defect_kpis",
+                  "fields": [
+                    {
+                      "name": "total_defects",
+                      "expression": "`total_defects`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`total_defects`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Defects",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_defects"
+                },
+                "period": {
+                  "fieldName": "total_defects"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "delay_hours",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_exec_defect_kpis",
+                  "fields": [
+                    {
+                      "name": "total_delay_hours",
+                      "expression": "`total_delay_hours`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`total_delay_hours`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Delay Hours",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_delay_hours"
+                },
+                "period": {
+                  "fieldName": "total_delay_hours"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "cancellations",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_exec_defect_kpis",
+                  "fields": [
+                    {
+                      "name": "cancellations",
+                      "expression": "`cancellations`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`cancellations`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Cancellations",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "cancellations"
+                },
+                "period": {
+                  "fieldName": "cancellations"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ifsds",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_exec_defect_kpis",
+                  "fields": [
+                    {
+                      "name": "ifsds",
+                      "expression": "`ifsds`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`ifsds`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "IFSDs",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "ifsds"
+                },
+                "period": {
+                  "fieldName": "ifsds"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "fleet_mtbur",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mtbur_kpi",
+                  "fields": [
+                    {
+                      "name": "fleet_mtbur",
+                      "expression": "`fleet_mtbur`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`fleet_mtbur`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Fleet MTBUR",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "fleet_mtbur"
+                },
+                "period": {
+                  "fieldName": "fleet_mtbur"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "svc_ratio",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory_health",
+                  "fields": [
+                    {
+                      "name": "serviceable_ratio",
+                      "expression": "`serviceable_ratio`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`serviceable_ratio`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Serviceable Ratio",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "serviceable_ratio",
+                  "format": {
+                    "type": "number-percent"
+                  }
+                },
+                "period": {
+                  "fieldName": "serviceable_ratio"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "aog_parts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_inventory_health",
+                  "fields": [
+                    {
+                      "name": "aog_count",
+                      "expression": "`aog_count`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "`aog_count`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "AOG Parts",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "aog_count"
+                },
+                "period": {
+                  "fieldName": "aog_count"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "top_ata_delays",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_exec_top_ata_delays",
+                  "fields": [
+                    {
+                      "name": "chapter_description",
+                      "expression": "`chapter_description`"
+                    },
+                    {
+                      "name": "delay_minutes",
+                      "expression": "`delay_minutes`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Top 10 ATA Sections by Delay Minutes",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "chapter_description",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "delay_minutes",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top_pn_removals",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_top_pn_cancellations",
+                  "fields": [
+                    {
+                      "name": "part_name",
+                      "expression": "`part_name`"
+                    },
+                    {
+                      "name": "removal_count",
+                      "expression": "`removal_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Top 10 P/Ns by Unscheduled Removals",
+                "showTitle": true
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "part_name",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "removal_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 6,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "defect_trend_weekly",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_exec_defect_trend_weekly",
+                  "fields": [
+                    {
+                      "name": "week_start",
+                      "expression": "`week_start`"
+                    },
+                    {
+                      "name": "defect_count",
+                      "expression": "`defect_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "Fleet-Wide Weekly Defect Trend",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "week_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "defect_count",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "mtbur_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mtbur_trend",
+                  "fields": [
+                    {
+                      "name": "month_start",
+                      "expression": "`month_start`"
+                    },
+                    {
+                      "name": "fleet_mtbur",
+                      "expression": "`fleet_mtbur`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "title": "MTBUR Fleet Trend",
+                "showTitle": true
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month_start",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "fleet_mtbur",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 12,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "dq_scorecard",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_dq_scorecard",
+                  "fields": [
+                    {
+                      "name": "metric",
+                      "expression": "`metric`"
+                    },
+                    {
+                      "name": "score",
+                      "expression": "`score`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Data Quality Scorecard",
+                "showTitle": true
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "metric"
+                  },
+                  {
+                    "fieldName": "score"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 12,
+            "height": 4
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "global_filters",
+      "displayName": "Global Filters",
+      "layout": [
+        {
+          "widget": {
+            "name": "date_range_filter",
+            "queries": [
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88501891802b5d4a1020145e_date_range",
+                "query": {
+                  "datasetName": "ds_reliability_kpis",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af882d1fa9bb1ec504e728a425_date_range",
+                "query": {
+                  "datasetName": "ds_removal_trend_weekly",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88711502acba3a1cf55580cb_date_range",
+                "query": {
+                  "datasetName": "ds_sched_unsched_trend",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88901721b39ccbea5a0f99cc_date_range",
+                "query": {
+                  "datasetName": "ds_removal_by_tail",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88b118e09f0546ae0529d22d_date_range",
+                "query": {
+                  "datasetName": "ds_removals_by_ata",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88d614d2b2131856b184cb9a_date_range",
+                "query": {
+                  "datasetName": "ds_removals_by_station",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88f91421865a499607d9c0f8_date_range",
+                "query": {
+                  "datasetName": "ds_mtbur_by_part",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88071d18b45a2bcd33466e2c_date_range",
+                "query": {
+                  "datasetName": "ds_reason_breakdown",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc7f615aca8f0ef55953b221a_date_range",
+                "query": {
+                  "datasetName": "ds_defect_kpis",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc6d51664acb1ec8ed51a064e_date_range",
+                "query": {
+                  "datasetName": "ds_defect_trend_weekly",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc7021a9d9864145824cb7218_date_range",
+                "query": {
+                  "datasetName": "ds_defect_part_linkage",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc7331d429ca8edaba2bb886d_date_range",
+                "query": {
+                  "datasetName": "ds_cancellation_trend",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc760180d8bd97410abe1b635_date_range",
+                "query": {
+                  "datasetName": "ds_deferral_analysis",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc78e1239a41b5dd2763cfeab_date_range",
+                "query": {
+                  "datasetName": "ds_top_ata_by_delays",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc7c718b3bb45eba1a2e95140_date_range",
+                "query": {
+                  "datasetName": "ds_recent_defects",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b03242163090180bba8385c8c7_date_range",
+                "query": {
+                  "datasetName": "ds_procurement_kpis",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b0317d1204966b9fbf533ca313_date_range",
+                "query": {
+                  "datasetName": "ds_order_status_by_type",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b0314b1ae1b7baa5dd3a503ab9_date_range",
+                "query": {
+                  "datasetName": "ds_lead_time_trend",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b031e01e8caf7d4c459f48fc8d_date_range",
+                "query": {
+                  "datasetName": "ds_fulfillment_trend",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b032121af4850316c3b0a559da_date_range",
+                "query": {
+                  "datasetName": "ds_repair_cost_quarterly",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06ad2140781fc9693c37d81f5_date_range",
+                "query": {
+                  "datasetName": "ds_exec_defect_kpis",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06bbb15bd91828c2162e9c458_date_range",
+                "query": {
+                  "datasetName": "ds_exec_defect_trend_weekly",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06bf1133083920ada29f09f9f_date_range",
+                "query": {
+                  "datasetName": "ds_exec_top_ata_delays",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06b861b61a48555c5622aab7c_date_range",
+                "query": {
+                  "datasetName": "ds_mtbur_kpi",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06b131b7e9b3b327d731e83eb_date_range",
+                "query": {
+                  "datasetName": "ds_mtbur_trend",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06b4c185193125eb0cdc894d1_date_range",
+                "query": {
+                  "datasetName": "ds_top_pn_cancellations",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174affd7c1e498e05266174eba5c9_date_range",
+                "query": {
+                  "datasetName": "ds_inventory_movement",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b031191b32a0f56cf69fff5172_date_range",
+                "query": {
+                  "datasetName": "ds_top_shop_findings",
+                  "parameters": [
+                    {
+                      "name": "date_range",
+                      "keyword": "date_range"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Date Range",
+                "showTitle": true
+              },
+              "selection": {
+                "defaultSelection": {
+                  "range": {
+                    "dataType": "DATE",
+                    "min": {
+                      "value": "now-1y/d"
+                    },
+                    "max": {
+                      "value": "now/d"
+                    }
+                  }
+                }
+              },
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88501891802b5d4a1020145e_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af882d1fa9bb1ec504e728a425_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88711502acba3a1cf55580cb_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88901721b39ccbea5a0f99cc_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88b118e09f0546ae0529d22d_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88d614d2b2131856b184cb9a_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88f91421865a499607d9c0f8_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174af88071d18b45a2bcd33466e2c_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc7f615aca8f0ef55953b221a_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc6d51664acb1ec8ed51a064e_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc7021a9d9864145824cb7218_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc7331d429ca8edaba2bb886d_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc760180d8bd97410abe1b635_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc78e1239a41b5dd2763cfeab_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174afc7c718b3bb45eba1a2e95140_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b03242163090180bba8385c8c7_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b0317d1204966b9fbf533ca313_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b0314b1ae1b7baa5dd3a503ab9_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b031e01e8caf7d4c459f48fc8d_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b032121af4850316c3b0a559da_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06ad2140781fc9693c37d81f5_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06bbb15bd91828c2162e9c458_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06bf1133083920ada29f09f9f_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06b861b61a48555c5622aab7c_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06b131b7e9b3b327d731e83eb_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b06b4c185193125eb0cdc894d1_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174affd7c1e498e05266174eba5c9_date_range"
+                  },
+                  {
+                    "parameterName": "date_range",
+                    "queryName": "parameter_dashboards/01f174aef79a1bc593b91faec6139ff5/datasets/01f174b031191b32a0f56cf69fff5172_date_range"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 3
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}

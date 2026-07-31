@@ -17,12 +17,12 @@ from dq_rules_loader import get_critical_rules_for_table, get_warning_rules_for_
 # COMMAND ----------
 
 def get_bronze_table(table_name):
-    """Read a Bronze table using Delta streaming from the configured source."""
+    """Read a Bronze table using batch read from the configured source."""
     bronze_catalog = spark.conf.get("bronze_catalog")
     bronze_schema = spark.conf.get("bronze_schema")
     # Exclude CDF metadata columns that conflict with enabling CDF on Silver tables
     cdf_cols = ["_change_type", "_commit_version", "_commit_timestamp"]
-    df = spark.readStream.table(
+    df = spark.read.table(
         f"{bronze_catalog}.{bronze_schema}.{table_name}"
     )
     return df.drop(*cdf_cols)
