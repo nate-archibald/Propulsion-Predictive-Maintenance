@@ -109,7 +109,7 @@ def merge_dim_part():
     window = Window.orderBy("pn")
     gold_df = (
         silver_df
-        .withColumn("dim_part_key", F.abs(F.hash(col("pn"))).cast("bigint"))
+        .withColumn("dim_part_key", F.xxhash64(col("pn")))
         .select(
             col("dim_part_key"),
             col("pn"),
@@ -398,7 +398,7 @@ def merge_fact_component_removal():
         )
         .withColumn(
             "fact_component_removal_key",
-            F.abs(F.hash(concat_ws("||", silver_df["transaction"], silver_df["transaction_item"].cast("string")))).cast("bigint")
+            F.xxhash64(concat_ws("||", silver_df["transaction"], silver_df["transaction_item"].cast("string")))
         )
         .withColumn(
             "transaction_date_key",
@@ -440,7 +440,7 @@ def merge_fact_component_removal():
 
     # MERGE
     gold_df.createOrReplaceTempView("source_fact_component_removal")
-    merge_cols = [c for c in gold_df.columns if c != "fact_component_removal_key"]
+    merge_cols = list(gold_df.columns)
     update_set = ", ".join([f"target.`{c}` = source.`{c}`" for c in merge_cols])
 
     spark.sql(f"""
@@ -491,7 +491,7 @@ def merge_fact_defect():
         )
         .withColumn(
             "fact_defect_key",
-            F.abs(F.hash(concat_ws("||", silver_df["defect_type"], silver_df["defect"], silver_df["defect_item"].cast("string")))).cast("bigint")
+            F.xxhash64(concat_ws("||", silver_df["defect_type"], silver_df["defect"], silver_df["defect_item"].cast("string")))
         )
         .withColumn(
             "reported_date_key",
@@ -538,7 +538,7 @@ def merge_fact_defect():
 
     # MERGE
     gold_df.createOrReplaceTempView("source_fact_defect")
-    merge_cols = [c for c in gold_df.columns if c != "fact_defect_key"]
+    merge_cols = list(gold_df.columns)
     update_set = ", ".join([f"target.`{c}` = source.`{c}`" for c in merge_cols])
 
     spark.sql(f"""
@@ -655,7 +655,7 @@ def merge_fact_inventory_transaction():
         .join(dim_station, silver_df["location"] == dim_station["station_code"], "left")
         .withColumn(
             "fact_inventory_transaction_key",
-            F.abs(F.hash(concat_ws("||", silver_df["transaction_no"].cast("string"), silver_df["batch"].cast("string")))).cast("bigint")
+            F.xxhash64(concat_ws("||", silver_df["transaction_no"].cast("string"), silver_df["batch"].cast("string")))
         )
         .withColumn(
             "transaction_date_key",
@@ -684,7 +684,7 @@ def merge_fact_inventory_transaction():
 
     # MERGE
     gold_df.createOrReplaceTempView("source_fact_inv_txn")
-    merge_cols = [c for c in gold_df.columns if c != "fact_inventory_transaction_key"]
+    merge_cols = list(gold_df.columns)
     update_set = ", ".join([f"target.`{c}` = source.`{c}`" for c in merge_cols])
 
     spark.sql(f"""
@@ -732,7 +732,7 @@ def merge_fact_inventory_snapshot():
         .join(dim_station, silver_df["location"] == dim_station["station_code"], "left")
         .withColumn(
             "fact_inventory_snapshot_key",
-            F.abs(F.hash(silver_df["batch"].cast("string"))).cast("bigint")
+            F.xxhash64(silver_df["batch"].cast("string"))
         )
         .withColumn(
             "snapshot_date_key",
@@ -795,7 +795,7 @@ def merge_fact_inventory_control():
         .join(dim_part, silver_df["pn"] == dim_part["pn"], "left")
         .withColumn(
             "fact_inventory_control_key",
-            F.abs(F.hash(concat_ws("||", silver_df["pn"], silver_df["sn"], silver_df["control"]))).cast("bigint")
+            F.xxhash64(concat_ws("||", silver_df["pn"], silver_df["sn"], silver_df["control"]))
         )
         .withColumn(
             "schedule_date_key",
@@ -837,7 +837,7 @@ def merge_fact_inventory_control():
 
     # MERGE (accumulating snapshot — update existing, insert new)
     gold_df.createOrReplaceTempView("source_fact_inv_control")
-    merge_cols = [c for c in gold_df.columns if c != "fact_inventory_control_key"]
+    merge_cols = list(gold_df.columns)
     update_set = ", ".join([f"target.`{c}` = source.`{c}`" for c in merge_cols])
 
     spark.sql(f"""
@@ -880,11 +880,11 @@ def merge_fact_order():
         .join(dim_part, silver_df["pn"] == dim_part["pn"], "left")
         .withColumn(
             "fact_order_key",
-            F.abs(F.hash(concat_ws("||",
+            F.xxhash64(concat_ws("||",
                 silver_df["order_type"],
                 silver_df["order_number"].cast("string"),
                 silver_df["order_line"].cast("string")
-            ))).cast("bigint")
+            ))
         )
         .withColumn(
             "order_date_key",
@@ -916,7 +916,7 @@ def merge_fact_order():
 
     # MERGE
     gold_df.createOrReplaceTempView("source_fact_order")
-    merge_cols = [c for c in gold_df.columns if c != "fact_order_key"]
+    merge_cols = list(gold_df.columns)
     update_set = ", ".join([f"target.`{c}` = source.`{c}`" for c in merge_cols])
 
     spark.sql(f"""
@@ -959,11 +959,11 @@ def merge_fact_teardown():
         .join(dim_part, silver_df["pn"] == dim_part["pn"], "left")
         .withColumn(
             "fact_teardown_key",
-            F.abs(F.hash(concat_ws("||",
+            F.xxhash64(concat_ws("||",
                 silver_df["order_type"],
                 silver_df["order_number"].cast("string"),
                 silver_df["order_line"].cast("string")
-            ))).cast("bigint")
+            ))
         )
         .withColumn(
             "created_date_key",
@@ -993,20 +993,13 @@ def merge_fact_teardown():
         )
     )
 
-    # MERGE
-    gold_df.createOrReplaceTempView("source_fact_teardown")
-    merge_cols = [c for c in gold_df.columns if c != "fact_teardown_key"]
-    update_set = ", ".join([f"target.`{c}` = source.`{c}`" for c in merge_cols])
-
-    spark.sql(f"""
-        MERGE INTO {target_table} AS target
-        USING source_fact_teardown AS source
-        ON target.order_type = source.order_type
-           AND target.order_number = source.order_number
-           AND target.order_line = source.order_line
-        WHEN MATCHED THEN UPDATE SET {update_set}
-        WHEN NOT MATCHED THEN INSERT *
-    """)
+    # Transaction fact — full refresh (truncate + insert) rather than MERGE.
+    # The prior grain-based MERGE accumulated duplicate rows (~248x fan-out),
+    # producing non-unique surrogate keys that break the Lakebase synced table.
+    # A truncate+insert of the deduped, single-grain source guarantees exactly
+    # one row per (order_type, order_number, order_line) with a unique key.
+    spark.sql(f"TRUNCATE TABLE {target_table}")
+    gold_df.write.mode("append").insertInto(target_table)
 
     count = spark.table(target_table).count()
     print(f"  ✓ fact_teardown: {count} rows")
