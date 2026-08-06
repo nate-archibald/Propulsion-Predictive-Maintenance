@@ -22,6 +22,10 @@ import {
 const DB_SCHEMA = process.env.DB_SCHEMA || "an_maintenanceengineering_ods";
 const S = DB_SCHEMA;
 
+// Catalog for Lakebase inventory snapshot tables
+const INVENTORY_CATALOG = "subject_maintenanceengineering_test";
+const INVENTORY_SCHEMA = "an_maintenanceengineering_ods";
+
 // ── Propulsion scoping ───────────────────────────────────────────────
 // This tool only shows PROPULSION (engine/APU) data. The definition mirrors the
 // user's `vw_prop_*` Unity Catalog views (which also scope the Genie spaces).
@@ -332,6 +336,161 @@ await createApp({
           console.warn(`[Lakebase] /api/serviceable-spares fallback: ${err}`);
           res.json({
             data: { total: 0, esns: [], type: type },
+            source: "mock",
+          });
+        }
+      });
+
+      // ── Diagnostic: Check transaction history for specific SNs ──────────────────────
+      app.get("/api/critical-spares-debug", async (req: Request, res: Response) => {
+        const pn = String(req.query.pn || "4120T00P60");
+        const sns = (String(req.query.sns || "LMDBG310,LMDAG909,LMDBG272").split(",")).map(s => s.trim());
+        
+        console.log(`[DEBUG] Querying spares for PN: ${pn}, SNs: ${sns.join(", ")}`);
+        
+        try {
+          // Show all transactions for these SNs with extended diagnostics
+          const result = await appkit.lakebase.query(
+            `SELECT 
+               p.pn,
+               t.sn,
+               t.transaction_no,
+               t.transaction_type,
+               t.qty,
+               LOWER(TRIM(t.transaction_type)) AS transaction_type_clean,
+               ROW_NUMBER() OVER (PARTITION BY p.pn, t.sn ORDER BY t.transaction_no DESC) AS rn
+             FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_transaction t
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON t.dim_part_key = p.dim_part_key
+             WHERE (p.pn = $1 OR p.pn IS NULL) 
+               AND TRIM(t.sn) IN (${sns.map((_, i) => `TRIM($${i + 2})`).join(", ")})
+             ORDER BY t.sn, t.transaction_no DESC`,
+            [pn, ...sns],
+          );
+
+          console.log(`[DEBUG] Query returned ${result.rows.length} rows`);
+          if (result.rows.length > 0) {
+            console.log(`[DEBUG] First row:`, result.rows[0]);
+          }
+
+          // Show what's the latest per SN
+          const latestPerSn = result.rows.filter((r: any) => r.rn === 1);
+          
+          // Show which would qualify as "spares" with OLD logic (R/I only)
+          const sparesWithRILogic = latestPerSn.filter((r: any) => 
+            ['r/i', 'r/i-nla', 'r/i-nlk'].includes(String(r.transaction_type_clean || ''))
+          );
+
+          // Show which would qualify as "spares" with NEW warehouse logic
+          const warehouseStates = ['r/i', 'bin/transfer', 'to/receiving', 'ro/receiving', 'initial/load'];
+          const sparesWithWarehouseLogic = latestPerSn.filter((r: any) => 
+            warehouseStates.includes(String(r.transaction_type_clean || ''))
+          );
+
+          console.log(`[DEBUG] Latest per SN: ${latestPerSn.length}, Spares (R/I only): ${sparesWithRILogic.length}, Spares (warehouse): ${sparesWithWarehouseLogic.length}`);
+
+          res.json({
+            pn,
+            sns,
+            summary: {
+              total_rows: result.rows.length,
+              latest_per_sn: latestPerSn.length,
+              spares_ri_only: sparesWithRILogic.length,
+              spares_warehouse: sparesWithWarehouseLogic.length,
+              transaction_types_seen: [...new Set(result.rows.map((r: any) => r.transaction_type))],
+            },
+            all_transactions: result.rows.slice(0, 100), // First 100 for debugging
+            latest_per_sn: latestPerSn,
+            spares_with_ri_logic: sparesWithRILogic,
+            spares_with_warehouse_logic: sparesWithWarehouseLogic,
+          });
+        } catch (err) {
+          console.error(`[Lakebase] /api/critical-spares-debug error:`, err);
+          res.json({ error: String(err), pn, sns });
+        }
+      });
+
+      // ── Critical Spares (for Spare Quick View widget) ──────────────────────────────
+      app.get("/api/critical-spares", async (_req: Request, res: Response) => {
+        // Part mapping: part name → array of PNs for that part
+        const partMap: Record<string, string[]> = {
+          "FADEC": ["4120T00P60", "4120T00P63"],
+          "FMU": ["4120T01P02"],
+          "SEAL PRV": ["421645-2"],
+          "ENG FUEL PUMP": ["829500-7", "829500-9"],
+          "ENG OBV": ["5080046-103"],
+          "ENG ATS": ["4120T06P10"],
+          "APU ANTI-SURGE VALVE": ["4954226"],
+          "T2 AIR TEMP SENSOR": ["4119T30P07"],
+          "APU INLET SILENCER": ["4953193"],
+          "APU ESC": ["4508022", "4954309"],
+          "APU FUEL MODULE ASSY": ["4505008G", "4505008H"],
+          "ENG IGNITION EXCITER": ["9238M66P11"],
+          "ENG FUEL LOW PRESSURE SWITCH": ["1103P1114-01"],
+          "OIL LEVEL TANK INDICATOR": ["4121T65P02"],
+          "APU BSG": ["4952826"],
+          "ENG SCV": ["4120T05P04"],
+          "APU FADEC": ["4505003M"],
+        };
+
+        // All unique PNs from the map
+        const allPns = Object.values(partMap).flat();
+        const pnList = allPns.map((pn) => `'${pn.replace(/'/g, "''")}'`).join(", ");
+
+        try {
+          // Spare parts: not installed AND in a serviceable condition
+          // Including INSPTEST (Inspected & Tested) since user data shows it's serviceable
+          const spareConditions = ["REPAIR", "SV", "OH", "NEW", "MOD", "INSPTEST"];
+          const conditionList = spareConditions.map((c) => `'${c.replace(/'/g, "''")}'`).join(", ");
+
+          console.log(`[CRITICAL-SPARES] Spare conditions filter: (${conditionList})`);
+          console.log(`[CRITICAL-SPARES] PN list (${allPns.length} parts): ${pnList.substring(0, 100)}...`);
+
+          // Query: count parts that are NOT installed and have spare condition codes
+          // Using snapshot table for current state (not transaction history)
+          const result = await appkit.lakebase.query(
+            `SELECT p.pn, COUNT(DISTINCT s.sn)::int AS spare_count
+             FROM ${INVENTORY_CATALOG}.${INVENTORY_SCHEMA}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
+             JOIN ${INVENTORY_CATALOG}.${INVENTORY_SCHEMA}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
+             WHERE p.pn IN (${pnList})
+               AND s.installed_ac IS NULL
+               AND s.condition IN (${conditionList})
+             GROUP BY p.pn`,
+          );
+
+          console.log(`[CRITICAL-SPARES] Query returned ${result.rows.length} rows with spares`);
+          if (result.rows.length > 0) {
+            console.log(`[CRITICAL-SPARES] Sample results:`, result.rows.slice(0, 3));
+          }
+
+          // Build response: { partName, partNumbers: [{ pn, quantity }, ...] }
+          const pnToCount: Record<string, number> = {};
+          for (const row of result.rows) {
+            pnToCount[String(row.pn)] = Number(row.spare_count) || 0;
+          }
+
+          console.log(`[CRITICAL-SPARES] PN to count map: ${JSON.stringify(pnToCount)}`);
+
+          const criticalSpares = Object.entries(partMap).map(([name, pns]) => ({
+            name,
+            partNumbers: pns.map((pn) => ({
+              pn,
+              quantity: pnToCount[pn] || 0,
+            })),
+          }));
+
+          res.json({
+            data: criticalSpares,
+            source: "live",
+          });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/critical-spares fallback: ${err}`);
+          // Fallback: return the part map structure with 0 quantities
+          const fallback = Object.entries(partMap).map(([name, pns]) => ({
+            name,
+            partNumbers: pns.map((pn) => ({ pn, quantity: 0 })),
+          }));
+          res.json({
+            data: fallback,
             source: "mock",
           });
         }

@@ -137,16 +137,16 @@ export const DEFECTS_BY_ATA: Array<{ ata: string; description: string; count: nu
 ];
 
 export const WEEKLY_DEFECT_TREND: Array<{ week: string; count: number; [key: string]: unknown }> = [
-  { week: "W14", count: 4 },
-  { week: "W15", count: 6 },
-  { week: "W16", count: 3 },
-  { week: "W17", count: 5 },
-  { week: "W18", count: 7 },
-  { week: "W19", count: 4 },
-  { week: "W20", count: 8 },
-  { week: "W21", count: 6 },
-  { week: "W22", count: 5 },
-  { week: "W23", count: 9 },
+  { week: "2026-04-05", count: 4 },
+  { week: "2026-04-12", count: 6 },
+  { week: "2026-04-19", count: 3 },
+  { week: "2026-04-26", count: 5 },
+  { week: "2026-05-03", count: 7 },
+  { week: "2026-05-10", count: 4 },
+  { week: "2026-05-17", count: 8 },
+  { week: "2026-05-24", count: 6 },
+  { week: "2026-05-31", count: 5 },
+  { week: "2026-06-07", count: 9 },
 ];
 
 export const IMPACT_BY_PN: Array<{ partNumber: string; description: string; delayMinutes: number; cancels: number; removals: number; [key: string]: unknown }> = [

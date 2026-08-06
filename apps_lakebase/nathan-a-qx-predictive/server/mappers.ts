@@ -68,7 +68,26 @@ export function mapDefectByAta(r: Row): Row {
 }
 
 export function mapWeeklyTrend(r: Row): Row {
-  return { week: `W${num(r.week)}`, count: num(r.count) };
+  const weekNum = num(r.week);
+  const year = new Date().getFullYear();
+  
+  // Calculate the Sunday of the given ISO week
+  // ISO week 1 is the week with the first Thursday of the year
+  const jan4 = new Date(year, 0, 4);
+  const mondayOfWeek1 = new Date(jan4);
+  mondayOfWeek1.setDate(jan4.getDate() - jan4.getDay() + 1);
+  
+  // Add (weekNum - 1) * 7 days to get Monday of target week, then add 6 for Sunday
+  const sundayOfWeek = new Date(mondayOfWeek1);
+  sundayOfWeek.setDate(mondayOfWeek1.getDate() + (weekNum - 1) * 7 + 6);
+  
+  const dateStr = sundayOfWeek.toISOString().split('T')[0];
+  
+  return { 
+    week: dateStr,
+    weekLabel: dateStr,
+    count: num(r.count) 
+  };
 }
 
 export function mapPart(r: Row): Row {

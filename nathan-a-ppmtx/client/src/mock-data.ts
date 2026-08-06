@@ -137,16 +137,16 @@ export const DEFECTS_BY_ATA: Array<{ ata: string; description: string; count: nu
 ];
 
 export const WEEKLY_DEFECT_TREND: Array<{ week: string; count: number; [key: string]: unknown }> = [
-  { week: "W14", count: 4 },
-  { week: "W15", count: 6 },
-  { week: "W16", count: 3 },
-  { week: "W17", count: 5 },
-  { week: "W18", count: 7 },
-  { week: "W19", count: 4 },
-  { week: "W20", count: 8 },
-  { week: "W21", count: 6 },
-  { week: "W22", count: 5 },
-  { week: "W23", count: 9 },
+  { week: "2026-04-05", count: 4 },
+  { week: "2026-04-12", count: 6 },
+  { week: "2026-04-19", count: 3 },
+  { week: "2026-04-26", count: 5 },
+  { week: "2026-05-03", count: 7 },
+  { week: "2026-05-10", count: 4 },
+  { week: "2026-05-17", count: 8 },
+  { week: "2026-05-24", count: 6 },
+  { week: "2026-05-31", count: 5 },
+  { week: "2026-06-07", count: 9 },
 ];
 
 export const IMPACT_BY_PN: Array<{ partNumber: string; description: string; delayMinutes: number; cancels: number; removals: number; [key: string]: unknown }> = [
@@ -220,3 +220,30 @@ export const LINKAGE_STATS = {
   mediumPct: 8,
   lowPct: 17,
 };
+
+// Critical propulsion parts for Spare Quick View
+export interface CriticalSparePart {
+  name: string;
+  partNumbers: Array<{ pn: string; quantity: number }>;
+  [key: string]: unknown;
+}
+
+export const CRITICAL_SPARE_PARTS: CriticalSparePart[] = [
+  { name: "FADEC", partNumbers: [{ pn: "4120T00P60", quantity: 2 }, { pn: "4120T00P63", quantity: 1 }] },
+  { name: "FMU", partNumbers: [{ pn: "4120T01P02", quantity: 3 }] },
+  { name: "SEAL PRV", partNumbers: [{ pn: "421645-2", quantity: 5 }] },
+  { name: "ENG FUEL PUMP", partNumbers: [{ pn: "829500-7", quantity: 1 }, { pn: "829500-9", quantity: 2 }] },
+  { name: "ENG OBV", partNumbers: [{ pn: "5080046-103", quantity: 4 }] },
+  { name: "ENG ATS", partNumbers: [{ pn: "4120T06P10", quantity: 2 }] },
+  { name: "APU ANTI-SURGE VALVE", partNumbers: [{ pn: "4954226", quantity: 1 }] },
+  { name: "T2 AIR TEMP SENSOR", partNumbers: [{ pn: "4119T30P07", quantity: 6 }] },
+  { name: "APU INLET SILENCER", partNumbers: [{ pn: "4953193", quantity: 2 }] },
+  { name: "APU ESC", partNumbers: [{ pn: "4508022", quantity: 1 }, { pn: "4954309", quantity: 0 }] },
+  { name: "APU FUEL MODULE ASSY", partNumbers: [{ pn: "4505008G", quantity: 3 }, { pn: "4505008H", quantity: 2 }] },
+  { name: "ENG IGNITION EXCITER", partNumbers: [{ pn: "9238M66P11", quantity: 4 }] },
+  { name: "ENG FUEL LOW PRESSURE SWITCH", partNumbers: [{ pn: "1103P1114-01", quantity: 7 }] },
+  { name: "OIL LEVEL TANK INDICATOR", partNumbers: [{ pn: "4121T65P02", quantity: 2 }] },
+  { name: "APU BSG", partNumbers: [{ pn: "4952826", quantity: 1 }] },
+  { name: "ENG SCV", partNumbers: [{ pn: "4120T05P04", quantity: 3 }] },
+  { name: "APU FADEC", partNumbers: [{ pn: "4505003M", quantity: 2 }] },
+];

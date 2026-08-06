@@ -72,6 +72,13 @@ export default function HomePage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [sparesType, setSparesType] = useState<"ENGINE" | "APU">("ENGINE");
+  
+  // Critical spares — fetched from live API
+  const criticalSpares = useLakebaseData<Array<{
+    name: string;
+    partNumbers: Array<{ pn: string; quantity: number }>;
+  }>>("/api/critical-spares");
+  
   const dateQs = (() => {
     const p = new URLSearchParams();
     if (fromDate) p.set("from", fromDate);
@@ -362,10 +369,58 @@ export default function HomePage() {
       {/* Spare Quick View */}
       <Card data-testid="spare-quick-view-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Spare Quick View</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2">
+            Spare Quick View
+            {criticalSpares && <ConnectionStatus source={criticalSpares.source ?? "mock"} />}
+          </CardTitle>
         </CardHeader>
         <CardContent className="min-h-48">
-          <p className="text-sm text-muted-foreground">Widget content goes here</p>
+          {criticalSpares?.data && criticalSpares.data.length > 0 ? (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {criticalSpares.data.map((part: any, idx: number) => {
+                const totalQty = part.partNumbers.reduce((sum: number, pn: any) => sum + pn.quantity, 0);
+                const hasMultiplePns = part.partNumbers.length > 1;
+                
+                return (
+                  <div key={idx} className="border rounded-lg p-3 bg-card hover:bg-muted/30 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{part.name}</p>
+                        <div className={`mt-2 space-y-1 ${hasMultiplePns ? "bg-muted/50 p-2 rounded" : ""}`}>
+                          {part.partNumbers.map((pn: any, pnIdx: number) => (
+                            <div key={pnIdx} className="text-xs text-muted-foreground font-mono">
+                              <span className="text-foreground font-semibold">{pn.pn}</span>
+                              {hasMultiplePns && (
+                                <span className="ml-2">
+                                  ({pn.quantity} {pn.quantity === 1 ? "unit" : "units"})
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className={`text-xl font-bold ${
+                          totalQty === 0 ? "text-destructive" : 
+                          totalQty === 1 ? "text-yellow-600 dark:text-yellow-500" : 
+                          "text-green-600 dark:text-green-500"
+                        }`}>
+                          {totalQty}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {totalQty === 1 ? "unit" : "units"}
+                        </p>
+                      </div>
+                  </div>
+                </div>
+              );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-32">
+              <Skeleton className="w-full h-full" />
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
