@@ -9,8 +9,8 @@ import {
   Skeleton,
 } from "@databricks/appkit-ui/react";
 import { Search, Settings, AlertTriangle } from "lucide-react";
-import { MOCK_ENGINES } from "../mock-data";
 import type { EngineConfig } from "../mock-data";
+import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 
 export default function EnginesPage() {
   const [searchParams] = useSearchParams();
@@ -20,9 +20,10 @@ export default function EnginesPage() {
   const [selectedEngine, setSelectedEngine] = useState<EngineConfig | null>(
     null
   );
-  const loading = false;
+  const { data: engines, source } = useLakebaseData<EngineConfig>("/api/engines");
+  const loading = source === "loading";
 
-  const filtered = MOCK_ENGINES.filter((e) => {
+  const filtered = engines.filter((e) => {
     const q = search.toLowerCase();
     return (
       e.engineSN.toLowerCase().includes(q) ||
@@ -36,9 +37,12 @@ export default function EnginesPage() {
   return (
     <div className="space-y-6" data-testid="engines-page">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight" data-testid="engines-heading">
-          Engine Genealogy
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold tracking-tight" data-testid="engines-heading">
+            Engine Genealogy
+          </h2>
+          <ConnectionStatus source={source} context="fleet" />
+        </div>
         <p className="text-muted-foreground mt-1">
           Full configuration and history by Engine S/N
         </p>

@@ -9,13 +9,14 @@ import {
   TooltipProvider,
   useIsMobile,
 } from '@databricks/appkit-ui/react';
-import { Menu, Plane, Search, Settings, Package, BarChart3, AlertTriangle } from 'lucide-react';
+import { Menu, Plane, Search, Settings, Package, BarChart3, AlertTriangle, Sparkles, Sun, Moon } from 'lucide-react';
 import HomePage from './pages/HomePage';
 import DefectsPage from './pages/DefectsPage';
 import PartsPage from './pages/PartsPage';
 import EnginesPage from './pages/EnginesPage';
 import SparesPage from './pages/SparesPage';
 import ReliabilityPage from './pages/ReliabilityPage';
+import AssistantPage from './pages/AssistantPage';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Overview', icon: BarChart3, end: true },
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { to: '/engines', label: 'Engines', icon: Settings, end: false },
   { to: '/spares', label: 'Spares', icon: Package, end: false },
   { to: '/reliability', label: 'Reliability', icon: BarChart3, end: false },
+  { to: '/assistant', label: 'Assistant', icon: Sparkles, end: false },
 ];
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -41,6 +43,51 @@ const mobileNavLinkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 type NavLinkClassFn = (props: { isActive: boolean }) => string;
+
+type Theme = 'light' | 'dark';
+
+function getInitialTheme(): Theme {
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem('theme');
+    if (stored === 'light' || stored === 'dark') return stored;
+  }
+  if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    return 'dark';
+  }
+  return 'light';
+}
+
+function applyTheme(theme: Theme) {
+  const root = document.documentElement;
+  root.classList.toggle('dark', theme === 'dark');
+  root.classList.toggle('light', theme === 'light');
+}
+
+// Apply the persisted/system theme as early as possible to avoid a flash.
+if (typeof document !== 'undefined') {
+  applyTheme(getInitialTheme());
+}
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  useEffect(() => {
+    applyTheme(theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+      className="text-primary-foreground hover:bg-primary/80"
+      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      data-testid="theme-toggle"
+    >
+      {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+      <span className="sr-only">Toggle light/dark mode</span>
+    </Button>
+  );
+}
 
 function NavLinks({ className, linkClass, onClick }: { className?: string; linkClass: NavLinkClassFn; onClick?: () => void }) {
   return (
@@ -73,23 +120,27 @@ function Layout() {
         </div>
         {/* Desktop nav — hidden below md breakpoint */}
         <NavLinks className="hidden md:flex gap-1" linkClass={navLinkClass} />
-        {/* Mobile nav — visible below md breakpoint */}
-        <div className="ml-auto md:hidden">
-          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-            <Button variant="ghost" size="icon" onClick={() => setMobileNavOpen(true)} className="text-primary-foreground hover:bg-primary/80">
-              <Menu className="h-5 w-5" />
-              <span className="sr-only">Open navigation</span>
-            </Button>
-            <SheetContent side="left">
-              <SheetHeader>
-                <SheetTitle>Navigation</SheetTitle>
-              </SheetHeader>
-              <NavLinks className="flex flex-col gap-1" linkClass={mobileNavLinkClass} onClick={() => setMobileNavOpen(false)} />
-            </SheetContent>
-          </Sheet>
-        </div>
-        <div className="hidden md:block ml-auto text-xs opacity-70">
-          Horizon Air — E175 / CF34-8E
+        {/* Right-aligned controls: theme toggle (always), info (desktop), menu (mobile) */}
+        <div className="ml-auto flex items-center gap-2 md:gap-3">
+          <ThemeToggle />
+          <span className="hidden md:block text-xs opacity-70">
+            Horizon Air — E175 / CF34-8E
+          </span>
+          {/* Mobile nav — visible below md breakpoint */}
+          <div className="md:hidden">
+            <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+              <Button variant="ghost" size="icon" onClick={() => setMobileNavOpen(true)} className="text-primary-foreground hover:bg-primary/80">
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">Open navigation</span>
+              </Button>
+              <SheetContent side="left">
+                <SheetHeader>
+                  <SheetTitle>Navigation</SheetTitle>
+                </SheetHeader>
+                <NavLinks className="flex flex-col gap-1" linkClass={mobileNavLinkClass} onClick={() => setMobileNavOpen(false)} />
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
       </header>
 
@@ -115,6 +166,7 @@ const router = createBrowserRouter([
       { path: '/engines', element: <EnginesPage /> },
       { path: '/spares', element: <SparesPage /> },
       { path: '/reliability', element: <ReliabilityPage /> },
+      { path: '/assistant', element: <AssistantPage /> },
     ],
   },
 ]);

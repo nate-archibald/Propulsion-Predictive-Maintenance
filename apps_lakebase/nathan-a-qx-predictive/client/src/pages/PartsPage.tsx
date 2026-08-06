@@ -9,8 +9,8 @@ import {
   Skeleton,
 } from "@databricks/appkit-ui/react";
 import { Search, Package, ArrowRight } from "lucide-react";
-import { MOCK_PARTS } from "../mock-data";
 import type { Part } from "../mock-data";
+import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 
 function ConditionBadge({ condition }: { condition: string }) {
   const styles: Record<string, string> = {
@@ -35,9 +35,10 @@ export default function PartsPage() {
   const initialSearch = searchParams.get("search") ?? "";
   const [search, setSearch] = useState(initialSearch);
   const [selectedPart, setSelectedPart] = useState<Part | null>(null);
-  const loading = false;
+  const { data: parts, source } = useLakebaseData<Part>("/api/parts");
+  const loading = source === "loading";
 
-  const filtered = MOCK_PARTS.filter((p) => {
+  const filtered = parts.filter((p) => {
     const q = search.toLowerCase();
     return (
       p.partNumber.toLowerCase().includes(q) ||
@@ -53,9 +54,12 @@ export default function PartsPage() {
   return (
     <div className="space-y-6" data-testid="parts-page">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight" data-testid="parts-heading">
-          Parts Search
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold tracking-tight" data-testid="parts-heading">
+            Parts Search
+          </h2>
+          <ConnectionStatus source={source} context="parts" />
+        </div>
         <p className="text-muted-foreground mt-1">
           Search by Part Number, Serial Number, or Engine S/N
         </p>

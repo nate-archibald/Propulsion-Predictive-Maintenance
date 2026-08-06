@@ -1,0 +1,99 @@
+// ─── Server-side fallback data for QX Predictive Maintenance ────────────
+// Returned by API routes when Lakebase is unreachable (source: "mock").
+// Server and client are separate builds — this file exports data arrays only
+// (no TypeScript interfaces; those live in client/src/mock-data.ts).
+
+type Row = Record<string, unknown>;
+
+export const MOCK_DEFECTS: Row[] = [
+  { id: "DEF-2026-0412", tail: "N628QX", ata: "73-21", ataDesc: "Engine Fuel & Control", station: "PDX", date: "2026-05-28", narrative: "FUEL FLOW FLUCTUATION ON ENG 1 DURING CLIMB", resolution: "Replaced fuel control unit P/N 1301M91G05 S/N FCU-4421", impact: "DELAY", delayMinutes: 47, linkedPartSN: "FCU-4421", linkedPartPN: "1301M91G05", confidence: "HIGH", deferral: false },
+  { id: "DEF-2026-0398", tail: "N631QX", ata: "72-50", ataDesc: "Engine Turbine", station: "SEA", date: "2026-05-25", narrative: "HIGH EGT MARGIN LOSS ON ENG 2 TREND MONITORING", resolution: "Borescope inspection — HPT blade tip erosion noted. Engine scheduled for shop visit.", impact: "NONE", delayMinutes: 0, linkedPartSN: "HPT-8829", linkedPartPN: "1538M72P01", confidence: "MEDIUM", deferral: true },
+  { id: "DEF-2026-0385", tail: "N622QX", ata: "79-21", ataDesc: "Engine Oil System", station: "PDX", date: "2026-05-22", narrative: "OIL ON ENG 1 OUTBOARD THRUST REVERSER DOOR", resolution: "Replaced oil transfer tube S/N OTT-1192. Leak check SAT.", impact: "DELAY", delayMinutes: 93, linkedPartSN: "OTT-1192", linkedPartPN: "1538M79G01", confidence: "HIGH", deferral: false },
+  { id: "DEF-2026-0371", tail: "N640QX", ata: "73-11", ataDesc: "Engine Fuel Distribution", station: "BLI", date: "2026-05-19", narrative: "ENGINE 2 FUEL LEAK AT MANIFOLD CONNECTION", resolution: "Replaced fuel manifold gasket. Ops check SAT.", impact: "CANCEL", delayMinutes: 0, linkedPartSN: "FM-3301", linkedPartPN: "1538M73G02", confidence: "HIGH", deferral: false },
+  { id: "DEF-2026-0359", tail: "N635QX", ata: "72-30", ataDesc: "Engine Compressor", station: "RDM", date: "2026-05-16", narrative: "FAN BLADE FOD DAMAGE ENG 1 — BIRD STRIKE PDX-RDM", resolution: "Fan blade blend within limits. RTS.", impact: "DELAY", delayMinutes: 22, linkedPartSN: "FB-7712", linkedPartPN: "1538M72G08", confidence: "HIGH", deferral: false },
+  { id: "DEF-2026-0342", tail: "N628QX", ata: "78-10", ataDesc: "Engine Exhaust", station: "GEG", date: "2026-05-12", narrative: "EXHAUST NOZZLE CRACK NOTED DURING WALK-AROUND", resolution: "Replaced exhaust nozzle segment. Deferred to PDX heavy check.", impact: "NONE", delayMinutes: 0, linkedPartSN: "EN-5501", linkedPartPN: "1538M78G03", confidence: "LOW", deferral: true },
+  { id: "DEF-2026-0330", tail: "N619QX", ata: "49-10", ataDesc: "APU Power Section", station: "PDX", date: "2026-05-09", narrative: "APU FAILED TO START — NO LIGHT-OFF", resolution: "Replaced APU igniter plug. Ground test SAT.", impact: "DELAY", delayMinutes: 65, linkedPartSN: "IGN-0034", linkedPartPN: "3800726-1", confidence: "HIGH", deferral: false },
+  { id: "DEF-2026-0315", tail: "N642QX", ata: "72-50", ataDesc: "Engine Turbine", station: "SEA", date: "2026-05-05", narrative: "HPT SHROUD SEGMENT LIBERATION — BORESCOPE FINDING", resolution: "Engine removal for shop visit. S/N ESN-31047 to StandardAero.", impact: "CANCEL", delayMinutes: 0, linkedPartSN: "HPT-9102", linkedPartPN: "1538M72P01", confidence: "HIGH", deferral: false },
+  { id: "DEF-2026-0299", tail: "N633QX", ata: "73-21", ataDesc: "Engine Fuel & Control", station: "PDX", date: "2026-05-01", narrative: "FADEC CHANNEL A FAULT DURING TAKEOFF ROLL — REJECTED TAKEOFF", resolution: "FADEC LRU replaced P/N 1301M91G07 S/N FAD-2288", impact: "CANCEL", delayMinutes: 0, linkedPartSN: "FAD-2288", linkedPartPN: "1301M91G07", confidence: "HIGH", deferral: false },
+  { id: "DEF-2026-0281", tail: "N627QX", ata: "71-00", ataDesc: "Power Plant General", station: "MFR", date: "2026-04-27", narrative: "ENG 2 VIBRATION HIGH ON N1 — CREW REPORT", resolution: "Fan balance check — within limits. Continued monitoring.", impact: "DELAY", delayMinutes: 31, linkedPartSN: "", linkedPartPN: "", confidence: "LOW", deferral: true },
+  { id: "DEF-2026-0268", tail: "N636QX", ata: "72-30", ataDesc: "Engine Compressor", station: "PDX", date: "2026-04-23", narrative: "HPC STATOR VANE CRACK FOUND DURING BORESCOPE", resolution: "Engine R&R scheduled. Spare engine ESN-31052 installed.", impact: "NONE", delayMinutes: 0, linkedPartSN: "STV-4455", linkedPartPN: "1538M72G12", confidence: "HIGH", deferral: false },
+  { id: "DEF-2026-0250", tail: "N625QX", ata: "79-31", ataDesc: "Engine Oil Indication", station: "SEA", date: "2026-04-19", narrative: "LOW OIL PRESSURE WARNING ENG 1 IN CRUISE", resolution: "Oil pressure sensor replaced. Ground run SAT.", impact: "DELAY", delayMinutes: 55, linkedPartSN: "OPS-7721", linkedPartPN: "1538M79G05", confidence: "HIGH", deferral: false },
+];
+
+export const MOCK_PARTS: Row[] = [
+  { partNumber: "1301M91G05", serialNumber: "FCU-4421", description: "Fuel Control Unit", engineSN: "ESN-31042", tail: "N628QX", position: "ENG-1", condition: "SVC", location: "ON-WING", tsn: 8420, csn: 12100, tso: 2100, csi: 3200, installDate: "2025-11-15", ata: "73-21", isLLP: false, cycleLimit: null, cyclesRemaining: null },
+  { partNumber: "1538M72P01", serialNumber: "HPT-8829", description: "HPT Blade Set", engineSN: "ESN-31045", tail: "N631QX", position: "ENG-2", condition: "SVC", location: "ON-WING", tsn: 11200, csn: 16800, tso: 4500, csi: 6200, installDate: "2024-08-20", ata: "72-50", isLLP: true, cycleLimit: 20000, cyclesRemaining: 3200 },
+  { partNumber: "1538M79G01", serialNumber: "OTT-1192", description: "Oil Transfer Tube", engineSN: "ESN-31038", tail: "N622QX", position: "ENG-1", condition: "UNS", location: "IN-SHOP", tsn: 15300, csn: 22100, tso: 6800, csi: 9400, installDate: "2023-06-10", ata: "79-21", isLLP: false, cycleLimit: null, cyclesRemaining: null },
+  { partNumber: "1538M73G02", serialNumber: "FM-3301", description: "Fuel Manifold Assembly", engineSN: "ESN-31055", tail: "N640QX", position: "ENG-2", condition: "SVC", location: "ON-WING", tsn: 3200, csn: 4800, tso: 3200, csi: 4800, installDate: "2025-06-01", ata: "73-11", isLLP: false, cycleLimit: null, cyclesRemaining: null },
+  { partNumber: "1538M72G08", serialNumber: "FB-7712", description: "Fan Blade", engineSN: "ESN-31050", tail: "N635QX", position: "ENG-1", condition: "SVC", location: "ON-WING", tsn: 6100, csn: 9200, tso: 1200, csi: 1800, installDate: "2026-01-10", ata: "72-30", isLLP: true, cycleLimit: 30000, cyclesRemaining: 20800 },
+  { partNumber: "1301M91G07", serialNumber: "FAD-2288", description: "FADEC LRU", engineSN: "ESN-31048", tail: "N633QX", position: "ENG-1", condition: "UNS", location: "IN-SHOP", tsn: 9800, csn: 14500, tso: 4200, csi: 6100, installDate: "2024-11-05", ata: "73-21", isLLP: false, cycleLimit: null, cyclesRemaining: null },
+  { partNumber: "1538M72P01", serialNumber: "HPT-9102", description: "HPT Blade Set", engineSN: "ESN-31047", tail: "N642QX", position: "ENG-1", condition: "UNS", location: "IN-SHOP", tsn: 14100, csn: 19800, tso: 7200, csi: 10100, installDate: "2023-09-15", ata: "72-50", isLLP: true, cycleLimit: 20000, cyclesRemaining: 200 },
+  { partNumber: "1538M72G12", serialNumber: "STV-4455", description: "HPC Stator Vane", engineSN: "ESN-31051", tail: "N636QX", position: "ENG-2", condition: "UNS", location: "IN-SHOP", tsn: 12500, csn: 18200, tso: 5100, csi: 7400, installDate: "2024-03-22", ata: "72-30", isLLP: false, cycleLimit: null, cyclesRemaining: null },
+  { partNumber: "1538M79G05", serialNumber: "OPS-7721", description: "Oil Pressure Sensor", engineSN: "ESN-31039", tail: "N625QX", position: "ENG-1", condition: "UNS", location: "IN-SHOP", tsn: 10800, csn: 15900, tso: 3900, csi: 5700, installDate: "2024-10-12", ata: "79-31", isLLP: false, cycleLimit: null, cyclesRemaining: null },
+  { partNumber: "3800726-1", serialNumber: "IGN-0034", description: "APU Igniter Plug", engineSN: "APU-619", tail: "N619QX", position: "APU", condition: "UNS", location: "IN-SHOP", tsn: 5200, csn: 7800, tso: 2600, csi: 3900, installDate: "2025-04-18", ata: "49-10", isLLP: false, cycleLimit: null, cyclesRemaining: null },
+  { partNumber: "1538M72P02", serialNumber: "LPT-6601", description: "LPT Disk Stage 1", engineSN: "ESN-31042", tail: "N628QX", position: "ENG-1", condition: "SVC", location: "ON-WING", tsn: 8420, csn: 12100, tso: 8420, csi: 12100, installDate: "2022-03-01", ata: "72-50", isLLP: true, cycleLimit: 15000, cyclesRemaining: 2900 },
+  { partNumber: "1538M72P03", serialNumber: "HPD-3310", description: "HPT Disk", engineSN: "ESN-31045", tail: "N631QX", position: "ENG-2", condition: "SVC", location: "ON-WING", tsn: 11200, csn: 16800, tso: 11200, csi: 16800, installDate: "2021-06-15", ata: "72-50", isLLP: true, cycleLimit: 18000, cyclesRemaining: 1200 },
+  { partNumber: "1538M72P04", serialNumber: "FAN-2205", description: "Fan Disk", engineSN: "ESN-31050", tail: "N635QX", position: "ENG-1", condition: "SVC", location: "ON-WING", tsn: 6100, csn: 9200, tso: 6100, csi: 9200, installDate: "2023-01-10", ata: "72-30", isLLP: true, cycleLimit: 25000, cyclesRemaining: 15800 },
+  { partNumber: "1538M72P05", serialNumber: "HPC-1108", description: "HPC Impeller", engineSN: "ESN-31048", tail: "N633QX", position: "ENG-1", condition: "SVC", location: "ON-WING", tsn: 9800, csn: 14500, tso: 9800, csi: 14500, installDate: "2022-07-20", ata: "72-30", isLLP: true, cycleLimit: 15000, cyclesRemaining: 500 },
+];
+
+export const MOCK_SPARES: Row[] = [
+  { partNumber: "1301M91G05", description: "Fuel Control Unit", station: "PDX", condition: "SVC", quantity: 2, removalRate90d: 1, stockOutRisk: "LOW" },
+  { partNumber: "1301M91G05", description: "Fuel Control Unit", station: "SEA", condition: "SVC", quantity: 1, removalRate90d: 1, stockOutRisk: "MEDIUM" },
+  { partNumber: "1301M91G05", description: "Fuel Control Unit", station: "BLI", condition: "SVC", quantity: 0, removalRate90d: 0, stockOutRisk: "HIGH" },
+  { partNumber: "1538M72P01", description: "HPT Blade Set", station: "PDX", condition: "SVC", quantity: 1, removalRate90d: 2, stockOutRisk: "HIGH" },
+  { partNumber: "1538M72P01", description: "HPT Blade Set", station: "SEA", condition: "SVC", quantity: 1, removalRate90d: 1, stockOutRisk: "MEDIUM" },
+  { partNumber: "1538M79G01", description: "Oil Transfer Tube", station: "PDX", condition: "SVC", quantity: 3, removalRate90d: 1, stockOutRisk: "LOW" },
+  { partNumber: "1538M79G01", description: "Oil Transfer Tube", station: "GEG", condition: "SVC", quantity: 0, removalRate90d: 1, stockOutRisk: "HIGH" },
+  { partNumber: "1301M91G07", description: "FADEC LRU", station: "PDX", condition: "SVC", quantity: 2, removalRate90d: 1, stockOutRisk: "LOW" },
+  { partNumber: "1301M91G07", description: "FADEC LRU", station: "SEA", condition: "SVC", quantity: 1, removalRate90d: 1, stockOutRisk: "MEDIUM" },
+  { partNumber: "1301M91G07", description: "FADEC LRU", station: "RDM", condition: "SVC", quantity: 0, removalRate90d: 1, stockOutRisk: "HIGH" },
+  { partNumber: "1538M72G08", description: "Fan Blade", station: "PDX", condition: "SVC", quantity: 4, removalRate90d: 1, stockOutRisk: "LOW" },
+  { partNumber: "1538M72G08", description: "Fan Blade", station: "MFR", condition: "SVC", quantity: 1, removalRate90d: 0, stockOutRisk: "LOW" },
+  { partNumber: "3800726-1", description: "APU Igniter Plug", station: "PDX", condition: "SVC", quantity: 3, removalRate90d: 1, stockOutRisk: "LOW" },
+  { partNumber: "3800726-1", description: "APU Igniter Plug", station: "BLI", condition: "SVC", quantity: 0, removalRate90d: 1, stockOutRisk: "HIGH" },
+  { partNumber: "1538M79G05", description: "Oil Pressure Sensor", station: "PDX", condition: "SVC", quantity: 2, removalRate90d: 1, stockOutRisk: "LOW" },
+  { partNumber: "1538M79G05", description: "Oil Pressure Sensor", station: "SEA", condition: "SVC", quantity: 0, removalRate90d: 2, stockOutRisk: "HIGH" },
+];
+
+export const MOCK_ENGINES: Row[] = [
+  { engineSN: "ESN-31042", tail: "N628QX", engineType: "CF34-8E", position: "L", totalHours: 8420, totalCycles: 12100, lastShopVisit: "2025-11-15", parts: MOCK_PARTS.filter((p) => p.engineSN === "ESN-31042") },
+  { engineSN: "ESN-31045", tail: "N631QX", engineType: "CF34-8E", position: "R", totalHours: 11200, totalCycles: 16800, lastShopVisit: "2024-08-20", parts: MOCK_PARTS.filter((p) => p.engineSN === "ESN-31045") },
+  { engineSN: "ESN-31038", tail: "N622QX", engineType: "CF34-8E", position: "L", totalHours: 15300, totalCycles: 22100, lastShopVisit: "2023-06-10", parts: MOCK_PARTS.filter((p) => p.engineSN === "ESN-31038") },
+  { engineSN: "ESN-31050", tail: "N635QX", engineType: "CF34-8E", position: "L", totalHours: 6100, totalCycles: 9200, lastShopVisit: "2026-01-10", parts: MOCK_PARTS.filter((p) => p.engineSN === "ESN-31050") },
+  { engineSN: "ESN-31048", tail: "N633QX", engineType: "CF34-8E", position: "L", totalHours: 9800, totalCycles: 14500, lastShopVisit: "2024-11-05", parts: MOCK_PARTS.filter((p) => p.engineSN === "ESN-31048") },
+  { engineSN: "ESN-31055", tail: "N640QX", engineType: "CF34-8E", position: "R", totalHours: 3200, totalCycles: 4800, lastShopVisit: "2025-06-01", parts: MOCK_PARTS.filter((p) => p.engineSN === "ESN-31055") },
+  { engineSN: "ESN-31047", tail: "N642QX", engineType: "CF34-8E", position: "L", totalHours: 14100, totalCycles: 19800, lastShopVisit: "2023-09-15", parts: MOCK_PARTS.filter((p) => p.engineSN === "ESN-31047") },
+];
+
+export const MOCK_DEFECTS_BY_ATA: Row[] = [
+  { ata: "73-21", description: "Engine Fuel & Control", count: 3, delayMinutes: 47, cancels: 1 },
+  { ata: "72-50", description: "Engine Turbine", count: 2, delayMinutes: 0, cancels: 1 },
+  { ata: "79-21", description: "Engine Oil System", count: 1, delayMinutes: 93, cancels: 0 },
+  { ata: "73-11", description: "Engine Fuel Distribution", count: 1, delayMinutes: 0, cancels: 1 },
+  { ata: "72-30", description: "Engine Compressor", count: 2, delayMinutes: 22, cancels: 0 },
+  { ata: "78-10", description: "Engine Exhaust", count: 1, delayMinutes: 0, cancels: 0 },
+  { ata: "49-10", description: "APU Power Section", count: 1, delayMinutes: 65, cancels: 0 },
+  { ata: "79-31", description: "Engine Oil Indication", count: 1, delayMinutes: 55, cancels: 0 },
+];
+
+export const MOCK_WEEKLY_DEFECT_TREND: Row[] = [
+  { week: "W14", count: 4 }, { week: "W15", count: 6 }, { week: "W16", count: 3 },
+  { week: "W17", count: 5 }, { week: "W18", count: 7 }, { week: "W19", count: 4 },
+  { week: "W20", count: 8 }, { week: "W21", count: 6 }, { week: "W22", count: 5 },
+  { week: "W23", count: 9 },
+];
+
+export const MOCK_KPIS: Row = {
+  activeDefects: MOCK_DEFECTS.filter((d) => d.impact !== "NONE").length,
+  llpAlerts: MOCK_PARTS.filter((p) => p.isLLP && typeof p.cyclesRemaining === "number" && (p.cyclesRemaining as number) < 1000).length,
+  totalDelayMinutes: MOCK_DEFECTS.reduce((s, d) => s + (Number(d.delayMinutes) || 0), 0),
+  cancelCount: MOCK_DEFECTS.filter((d) => d.impact === "CANCEL").length,
+  totalDefects: MOCK_DEFECTS.length,
+  vibrationPireps: MOCK_DEFECTS.filter(
+    (d) => typeof d.narrative === "string" && d.narrative.toLowerCase().includes("vib"),
+  ).length,
+  openEcmp: MOCK_DEFECTS.filter(
+    (d) => typeof d.narrative === "string" && d.narrative.toUpperCase().includes("ECMP"),
+  ).length,
+};

@@ -1,1 +1,12 @@
 command: ['npm', 'run', 'start']
+env:
+  # Auto-injected by the platform from the app.resources.postgres binding in databricks.yml
+  - name: LAKEBASE_ENDPOINT
+    valueFrom: postgres
+  # Postgres schema that holds the synced Gold tables (qx_ppmtx_synced_gold_*)
+  - name: DB_SCHEMA
+    value: 'an_maintenanceengineering_ods'
+  # Propulsion-Supervisor-Agent (Agent Bricks MAS) serving endpoint powering the
+  # Assistant chat tab. Bound with CAN_QUERY via the app.resources.serving entry.
+  - name: DATABRICKS_SERVING_ENDPOINT_NAME
+    value: 'mas-99316ed5-endpoint'

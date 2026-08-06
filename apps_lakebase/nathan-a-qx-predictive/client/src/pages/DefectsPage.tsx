@@ -9,8 +9,8 @@ import {
   Skeleton,
 } from "@databricks/appkit-ui/react";
 import { Search, ArrowUpDown } from "lucide-react";
-import { MOCK_DEFECTS } from "../mock-data";
 import type { Defect } from "../mock-data";
+import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 
 function ConfidenceBadge({ level }: { level: string }) {
   const styles: Record<string, string> = {
@@ -49,9 +49,10 @@ export default function DefectsPage() {
   const [sortField, setSortField] = useState<keyof Defect>("date");
   const [sortAsc, setSortAsc] = useState(false);
   const [selectedDefect, setSelectedDefect] = useState<Defect | null>(null);
-  const loading = false;
+  const { data: defects, source } = useLakebaseData<Defect>("/api/defects");
+  const loading = source === "loading";
 
-  const filtered = MOCK_DEFECTS.filter((d) => {
+  const filtered = defects.filter((d) => {
     const q = search.toLowerCase();
     return (
       d.id.toLowerCase().includes(q) ||
@@ -81,9 +82,12 @@ export default function DefectsPage() {
   return (
     <div className="space-y-6" data-testid="defects-page">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight" data-testid="defects-heading">
-          Defects Search
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold tracking-tight" data-testid="defects-heading">
+            Defects Search
+          </h2>
+          <ConnectionStatus source={source} context="defects" />
+        </div>
         <p className="text-muted-foreground mt-1">
           Search by defect ID, tail number, ATA code, or station
         </p>

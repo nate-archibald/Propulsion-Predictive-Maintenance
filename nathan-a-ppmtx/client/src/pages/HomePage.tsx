@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
 import {
   Card,
   CardContent,
@@ -8,22 +7,22 @@ import {
   Skeleton,
   BarChart,
   LineChart,
+  Button,
 } from "@databricks/appkit-ui/react";
 import {
-  AlertTriangle,
   TrendingUp,
-  Wrench,
   Plane,
   Clock,
   Activity,
-  ArrowDownUp,
+  Waves,
+  ClipboardList,
+  CalendarRange,
 } from "lucide-react";
 import {
-  DEFECTS_BY_ATA_PERIOD,
-  WEEKLY_DEFECT_TREND_PERIOD,
-  MOCK_PARTS,
-  LINKAGE_STATS,
+  DEFECTS_BY_ATA,
+  WEEKLY_DEFECT_TREND,
 } from "../mock-data";
+import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 
 function MetricCard({
   title,
@@ -67,64 +66,57 @@ function MetricCard({
   );
 }
 
-type TimePeriod = "week" | "month" | "year";
-
-const PERIOD_LABELS: Record<TimePeriod, string> = {
-  week: "1W",
-  month: "1M",
-  year: "1Y",
-};
-
-function PeriodToggle({ value, onChange }: { value: TimePeriod; onChange: (p: TimePeriod) => void }) {
-  return (
-    <div className="flex gap-1">
-      {(["week", "month", "year"] as const).map((p) => (
-        <button
-          key={p}
-          onClick={() => onChange(p)}
-          className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
-            value === p
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground hover:bg-muted/80"
-          }`}
-        >
-          {PERIOD_LABELS[p]}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const REMOVAL_BY_PERIOD = {
-  week: { value: 3, label: "Last 7 days" },
-  month: { value: 10, label: "Last 30 days" },
-  year: { value: 47, label: "Last 12 months" },
-} as const;
-
-const DELAY_BY_PERIOD = {
-  week: { value: 78, label: "Last 7 days" },
-  month: { value: 393, label: "Last 30 days" },
-  year: { value: 2840, label: "Last 12 months" },
-} as const;
-
-const CANCELS_BY_PERIOD = {
-  week: { value: 1, label: "Last 7 days" },
-  month: { value: 3, label: "Last 30 days" },
-  year: { value: 16, label: "Last 12 months" },
-} as const;
-
 export default function HomePage() {
-  const loading = false;
-  const navigate = useNavigate();
-  const [removalPeriod, setRemovalPeriod] = useState<TimePeriod>("month");
-  const [delayPeriod, setDelayPeriod] = useState<TimePeriod>("month");
-  const [cancelPeriod, setCancelPeriod] = useState<TimePeriod>("month");
-  const [ataPeriod, setAtaPeriod] = useState<TimePeriod>("month");
-  const [trendPeriod, setTrendPeriod] = useState<TimePeriod>("month");
+  // Timeframe filter — scopes the Total Delay Min / Cancellations / Vibration
+  // PIREPs KPIs and the Defects-by-ATA chart. Empty = all-time (current default).
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [sparesType, setSparesType] = useState<"ENGINE" | "APU">("ENGINE");
+  const dateQs = (() => {
+    const p = new URLSearchParams();
+    if (fromDate) p.set("from", fromDate);
+    if (toDate) p.set("to", toDate);
+    const s = p.toString();
+    return s ? `?${s}` : "";
+  })();
+  const hasRange = Boolean(fromDate || toDate);
 
-  const llpAlerts = MOCK_PARTS.filter(
-    (p) => p.isLLP && p.cyclesRemaining !== null && p.cyclesRemaining < 1000
+  const { data: kpiRows, source: kpiSource } = useLakebaseData<{
+    activeDefects: number;
+    cancelCount: number;
+    totalDelayMinutes: number;
+    totalDefects: number;
+    llpAlerts: number;
+    vibrationPireps: number;
+    openEcmp: number;
+  }>(`/api/kpis${dateQs}`);
+  const { data: byAta, source: ataSource } = useLakebaseData<{
+    ata: string;
+    description: string;
+    count: number;
+    delayMinutes: number;
+    cancels: number;
+  }>(`/api/defects/by-ata${dateQs}`);
+  const { data: trend } = useLakebaseData<{ week: string; count: number }>(
+    "/api/defects/weekly-trend"
   );
+  const { data: sparesData, source: sparesSource } = useLakebaseData<{
+    total: number;
+    esns: string[];
+    type: string;
+  }>(`/api/serviceable-spares?type=${sparesType}`);
+
+  const kpi = kpiRows[0];
+  // Only show the full-page skeleton on the very first load; once we have data,
+  // keep the page mounted (and the date inputs focused) during refetches.
+  const loading = kpiSource === "loading" && !kpi;
+  const ataData = byAta.length > 0 ? byAta : DEFECTS_BY_ATA;
+  const trendData = trend.length > 0 ? trend : WEEKLY_DEFECT_TREND;
+
+  const totalDelayMinutes = kpi?.totalDelayMinutes ?? 0;
+  const cancelCount = kpi?.cancelCount ?? 0;
+  const vibrationPireps = kpi?.vibrationPireps ?? 0;
+  const openEcmp = kpi?.openEcmp ?? 0;
 
   if (loading) return <Skeleton className="h-96 w-full" />;
 
@@ -132,83 +124,125 @@ export default function HomePage() {
     <div className="space-y-6" data-testid="home-page">
       {/* Header */}
       <div>
-        <h2
-          className="text-2xl font-bold tracking-tight"
-          data-testid="hero-heading"
-        >
-          Engine Component Snapshot
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2
+            className="text-2xl font-bold tracking-tight"
+            data-testid="hero-heading"
+          >
+            Engine Component Snapshot
+          </h2>
+          <ConnectionStatus source={kpiSource} context="overview" />
+        </div>
         <p className="text-muted-foreground mt-1">
           Propulsion reliability overview — CF34-8E / E175 fleet
         </p>
       </div>
 
+      {/* Timeframe filter — scopes the marked KPIs + the Defects by ATA chart */}
+      <Card data-testid="timeframe-filter">
+        <CardContent className="py-3">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <CalendarRange className="h-4 w-4 text-muted-foreground" />
+              Timeframe
+            </div>
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="date-from"
+                className="text-xs font-medium text-muted-foreground"
+              >
+                From
+              </label>
+              <input
+                id="date-from"
+                type="date"
+                value={fromDate}
+                max={toDate || undefined}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                data-testid="date-from"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="date-to"
+                className="text-xs font-medium text-muted-foreground"
+              >
+                To
+              </label>
+              <input
+                id="date-to"
+                type="date"
+                value={toDate}
+                min={fromDate || undefined}
+                onChange={(e) => setToDate(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                data-testid="date-to"
+              />
+            </div>
+            {hasRange && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFromDate("");
+                  setToDate("");
+                }}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm hover:bg-muted"
+                data-testid="date-clear"
+              >
+                Clear
+              </button>
+            )}
+            <p className="text-xs text-muted-foreground ml-auto max-w-xs">
+              {hasRange
+                ? "Showing Total Delay Min, Cancellations, Vibration PIREPs & Defects by ATA for the selected range."
+                : "All-time. Pick a range to scope Total Delay Min, Cancellations, Vibration PIREPs & the Defects by ATA chart."}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="border-[var(--warning)] border-l-4" data-testid="metric-total-removals">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Total Part Removals
-                </p>
-                <p className="text-2xl font-bold mt-1">{REMOVAL_BY_PERIOD[removalPeriod].value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{REMOVAL_BY_PERIOD[removalPeriod].label}</p>
-              </div>
-              <div className="rounded-md p-2 bg-muted">
-                <ArrowDownUp className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </div>
-            <div className="flex gap-1 mt-3">
-              <PeriodToggle value={removalPeriod} onChange={setRemovalPeriod} />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-destructive border-l-4" data-testid="metric-delay-minutes">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Total Delay Min
-                </p>
-                <p className="text-2xl font-bold mt-1">{DELAY_BY_PERIOD[delayPeriod].value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{DELAY_BY_PERIOD[delayPeriod].label}</p>
-              </div>
-              <div className="rounded-md p-2 bg-muted">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </div>
-            <div className="flex gap-1 mt-3">
-              <PeriodToggle value={delayPeriod} onChange={setDelayPeriod} />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-destructive border-l-4" data-testid="metric-cancellations">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Cancellations
-                </p>
-                <p className="text-2xl font-bold mt-1">{CANCELS_BY_PERIOD[cancelPeriod].value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{CANCELS_BY_PERIOD[cancelPeriod].label}</p>
-              </div>
-              <div className="rounded-md p-2 bg-muted">
-                <Plane className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </div>
-            <div className="flex gap-1 mt-3">
-              <PeriodToggle value={cancelPeriod} onChange={setCancelPeriod} />
-            </div>
-          </CardContent>
-        </Card>
         <MetricCard
-          title="LLP Alerts"
-          value={llpAlerts.length}
-          subtitle="< 1,000 cycles to limit"
-          icon={Activity}
-          variant={llpAlerts.length > 0 ? "destructive" : "success"}
-          testId="metric-llp-alerts"
+          title="Vibration PIREPs"
+          value={vibrationPireps}
+          subtitle={
+            hasRange
+              ? "Pilot reports mentioning vibration (in range)"
+              : "Pilot reports mentioning vibration"
+          }
+          icon={Waves}
+          variant="warning"
+          testId="metric-vibration-pireps"
+        />
+        <MetricCard
+          title="Total Delay Min"
+          value={totalDelayMinutes}
+          subtitle={
+            hasRange ? "Propulsion-attributable (in range)" : "Propulsion-attributable"
+          }
+          icon={Clock}
+          variant="destructive"
+          testId="metric-delay-minutes"
+        />
+        <MetricCard
+          title="Cancellations"
+          value={cancelCount}
+          subtitle={
+            hasRange ? "Propulsion-attributable (in range)" : "Propulsion-attributable"
+          }
+          icon={Plane}
+          variant="destructive"
+          testId="metric-cancellations"
+        />
+        <MetricCard
+          title="ECMP"
+          value={openEcmp}
+          subtitle="Open engineering task cards"
+          icon={ClipboardList}
+          variant={openEcmp > 0 ? "warning" : "success"}
+          testId="metric-ecmp"
         />
       </div>
 
@@ -217,17 +251,15 @@ export default function HomePage() {
         {/* ATA Hotspot Chart */}
         <Card data-testid="ata-hotspot-chart">
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <TrendingUp className="h-4 w-4" />
-                Defects by ATA Section
-              </CardTitle>
-              <PeriodToggle value={ataPeriod} onChange={setAtaPeriod} />
-            </div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              Defects by ATA Section
+              <ConnectionStatus source={ataSource} />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <BarChart
-              data={DEFECTS_BY_ATA_PERIOD[ataPeriod].map((d) => ({
+              data={ataData.slice(0, 12).map((d) => ({
                 ...d,
                 label: d.ata,
               }))}
@@ -242,165 +274,100 @@ export default function HomePage() {
         {/* Weekly Defect Trend */}
         <Card data-testid="weekly-trend-chart">
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Activity className="h-4 w-4" />
-                {trendPeriod === "week" ? "Daily" : trendPeriod === "year" ? "Monthly" : "Weekly"} Defect Trend
-              </CardTitle>
-              <PeriodToggle value={trendPeriod} onChange={setTrendPeriod} />
-            </div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Weekly Defect Trend
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <LineChart
-              data={WEEKLY_DEFECT_TREND_PERIOD[trendPeriod]}
+              data={trendData}
               xKey="week"
               yKey="count"
               height={280}
-              smooth={false}
               colors={["var(--chart-2)"]}
             />
           </CardContent>
         </Card>
       </div>
 
-      {/* LLP Alerts + Data Quality Row */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* LLP Red-Line Alerts */}
-        <Card data-testid="llp-alerts-table">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-              LLP Red-Line Alerts
+      {/* Serviceable Spares */}
+      <Card data-testid="serviceable-spares-widget">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base">
+              Serviceable Spares ({sparesType === "ENGINE" ? "Engines" : "APUs"})
             </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {llpAlerts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4">
-                No LLPs within 1,000 cycles of limit.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left">
-                      <th className="py-2 pr-3 font-medium text-muted-foreground">
-                        Part
-                      </th>
-                      <th className="py-2 pr-3 font-medium text-muted-foreground">
-                        S/N
-                      </th>
-                      <th className="py-2 pr-3 font-medium text-muted-foreground">
-                        Tail
-                      </th>
-                      <th className="py-2 pr-3 font-medium text-muted-foreground">
-                        Remaining
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {llpAlerts.map((p) => (
-                      <tr
-                        key={p.serialNumber}
-                        className="border-b last:border-0 cursor-pointer hover:bg-muted/50"
-                        onClick={() =>
-                          navigate(
-                            `/parts?search=${encodeURIComponent(
-                              p.serialNumber
-                            )}`
-                          )
-                        }
-                        role="link"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            navigate(
-                              `/parts?search=${encodeURIComponent(
-                                p.serialNumber
-                              )}`
-                            );
-                          }
-                        }}
-                      >
-                        <td className="py-2 pr-3">{p.description}</td>
-                        <td className="py-2 pr-3 font-mono text-xs">
-                          {p.serialNumber}
-                        </td>
-                        <td className="py-2 pr-3">{p.tail}</td>
-                        <td className="py-2 pr-3">
-                          <span
-                            className={`inline-flex items-center gap-1 font-semibold ${
-                              (p.cyclesRemaining ?? 0) <= 500
-                                ? "text-destructive"
-                                : "text-[var(--warning)]"
-                            }`}
-                          >
-                            {p.cyclesRemaining?.toLocaleString()} cyc
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            <ConnectionStatus source={sparesSource} />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Toggle Engines / APUs */}
+          <div className="flex gap-2 border-b pb-4">
+            <Button
+              variant={sparesType === "ENGINE" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSparesType("ENGINE")}
+              className="text-xs"
+              data-testid="spares-toggle-engines"
+            >
+              Engines
+            </Button>
+            <Button
+              variant={sparesType === "APU" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSparesType("APU")}
+              className="text-xs"
+              data-testid="spares-toggle-apus"
+            >
+              APUs
+            </Button>
+          </div>
 
-        {/* Data Quality */}
-        <Card data-testid="data-quality-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Wrench className="h-4 w-4" />
-              Defect↔Part Linkage Quality
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold">
-                {LINKAGE_STATS.highPct}%
-              </span>
-              <span className="text-sm text-muted-foreground">
-                HIGH confidence (target ≥ 60%)
-              </span>
+          {/* Total Count */}
+          <div className="flex items-center gap-3 py-2">
+            <div className="text-3xl font-bold">
+              {sparesData?.[0]?.total ?? 0}
             </div>
-            <div className="space-y-2">
-              {[
-                {
-                  label: "HIGH",
-                  pct: LINKAGE_STATS.highPct,
-                  color: "bg-[var(--success)]",
-                },
-                {
-                  label: "MEDIUM",
-                  pct: LINKAGE_STATS.mediumPct,
-                  color: "bg-[var(--warning)]",
-                },
-                {
-                  label: "LOW",
-                  pct: LINKAGE_STATS.lowPct,
-                  color: "bg-destructive",
-                },
-              ].map((item) => (
-                <div key={item.label} className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-medium">{item.label}</span>
-                    <span className="text-muted-foreground">{item.pct}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${item.color}`}
-                      style={{ width: `${item.pct}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {LINKAGE_STATS.total} defects analyzed — trailing 12 months
+            <p className="text-sm text-muted-foreground">
+              {sparesType === "ENGINE" ? "Engines" : "APUs"} available for service
             </p>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+
+          {/* ESN / SN List */}
+          {sparesData?.[0]?.esns && sparesData[0].esns.length > 0 ? (
+            <div className="border rounded-md bg-muted/50 p-3 max-h-48 overflow-y-auto">
+              <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
+                {sparesType === "ENGINE" ? "Engine ESNs" : "APU SNs"}
+              </p>
+              <div className="space-y-1">
+                {sparesData[0].esns.map((esn) => (
+                  <div
+                    key={esn}
+                    className="text-sm font-mono p-1 hover:bg-background rounded"
+                  >
+                    {esn}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="border rounded-md bg-muted/50 p-3 text-sm text-muted-foreground text-center">
+              No serviceable spares currently available.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Spare Quick View */}
+      <Card data-testid="spare-quick-view-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Spare Quick View</CardTitle>
+        </CardHeader>
+        <CardContent className="min-h-48">
+          <p className="text-sm text-muted-foreground">Widget content goes here</p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

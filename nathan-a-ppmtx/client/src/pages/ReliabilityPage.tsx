@@ -20,9 +20,8 @@ import {
   WEEKLY_DEFECT_TREND,
   IMPACT_BY_PN,
   LINKAGE_STATS,
-  MOCK_DEFECTS,
-  MOCK_PARTS,
 } from "../mock-data";
+import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 
 function StatBox({
   label,
@@ -47,22 +46,45 @@ function StatBox({
 }
 
 export default function ReliabilityPage() {
-  const loading = false;
+  const { data: kpiRows, source } = useLakebaseData<{
+    activeDefects: number;
+    cancelCount: number;
+    totalDelayMinutes: number;
+    totalDefects: number;
+    llpAlerts: number;
+  }>("/api/kpis");
+  const { data: byAta } = useLakebaseData<{
+    ata: string;
+    description: string;
+    count: number;
+    delayMinutes: number;
+    cancels: number;
+  }>("/api/defects/by-ata");
+  const { data: trend } = useLakebaseData<{ week: string; count: number }>(
+    "/api/defects/weekly-trend"
+  );
 
-  const totalDelayMin = MOCK_DEFECTS.reduce((s, d) => s + d.delayMinutes, 0);
-  const cancelCount = MOCK_DEFECTS.filter((d) => d.impact === "CANCEL").length;
-  const llpAlertCount = MOCK_PARTS.filter(
-    (p) => p.isLLP && p.cyclesRemaining !== null && p.cyclesRemaining < 1000
-  ).length;
+  const loading = source === "loading";
+  const kpi = kpiRows[0];
+  const ataData = byAta.length > 0 ? byAta : DEFECTS_BY_ATA;
+  const trendData = trend.length > 0 ? trend : WEEKLY_DEFECT_TREND;
+
+  const totalDefects = kpi?.totalDefects ?? 0;
+  const totalDelayMin = kpi?.totalDelayMinutes ?? 0;
+  const cancelCount = kpi?.cancelCount ?? 0;
+  const llpAlertCount = kpi?.llpAlerts ?? 0;
 
   if (loading) return <Skeleton className="h-96 w-full" />;
 
   return (
     <div className="space-y-6" data-testid="reliability-page">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight" data-testid="reliability-heading">
-          Reliability Dashboard
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold tracking-tight" data-testid="reliability-heading">
+            Reliability Dashboard
+          </h2>
+          <ConnectionStatus source={source} context="reliability" />
+        </div>
         <p className="text-muted-foreground mt-1">
           Monthly reliability review — executive summary
         </p>
@@ -71,8 +93,8 @@ export default function ReliabilityPage() {
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatBox
-          label="Total Defects (30d)"
-          value={MOCK_DEFECTS.length}
+          label="Total Defects"
+          value={totalDefects}
           icon={AlertTriangle}
         />
         <StatBox label="Total Delay Minutes" value={totalDelayMin} icon={Clock} />
@@ -92,7 +114,7 @@ export default function ReliabilityPage() {
           </CardHeader>
           <CardContent>
             <BarChart
-              data={[...DEFECTS_BY_ATA]
+              data={[...ataData]
                 .sort((a, b) => b.delayMinutes - a.delayMinutes)
                 .slice(0, 10)
                 .map((d) => ({
@@ -145,7 +167,7 @@ export default function ReliabilityPage() {
           </CardHeader>
           <CardContent>
             <LineChart
-              data={WEEKLY_DEFECT_TREND}
+              data={trendData}
               xKey="week"
               yKey="count"
               height={280}

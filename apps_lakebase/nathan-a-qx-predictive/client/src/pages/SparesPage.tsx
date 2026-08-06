@@ -9,7 +9,8 @@ import {
   BarChart,
 } from "@databricks/appkit-ui/react";
 import { Search, Package, AlertTriangle } from "lucide-react";
-import { MOCK_SPARES } from "../mock-data";
+import type { SpareItem } from "../mock-data";
+import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 
 function RiskBadge({ risk }: { risk: string }) {
   const styles: Record<string, string> = {
@@ -28,9 +29,10 @@ function RiskBadge({ risk }: { risk: string }) {
 
 export default function SparesPage() {
   const [search, setSearch] = useState("");
-  const loading = false;
+  const { data: spares, source } = useLakebaseData<SpareItem>("/api/spares");
+  const loading = source === "loading";
 
-  const filtered = MOCK_SPARES.filter((s) => {
+  const filtered = spares.filter((s) => {
     const q = search.toLowerCase();
     return (
       s.partNumber.toLowerCase().includes(q) ||
@@ -41,7 +43,7 @@ export default function SparesPage() {
 
   // Station risk summary
   const stationRisk = Object.entries(
-    MOCK_SPARES.reduce(
+    spares.reduce(
       (acc, s) => {
         if (!acc[s.station]) {
           acc[s.station] = { station: s.station, high: 0, medium: 0, low: 0 };
@@ -63,9 +65,12 @@ export default function SparesPage() {
   return (
     <div className="space-y-6" data-testid="spares-page">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight" data-testid="spares-heading">
-          Spares & Inventory
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold tracking-tight" data-testid="spares-heading">
+            Spares & Inventory
+          </h2>
+          <ConnectionStatus source={source} context="inventory" />
+        </div>
         <p className="text-muted-foreground mt-1">
           Station-level spare positioning and stock-out risk
         </p>

@@ -5,14 +5,35 @@ resources:
   apps:
     app:
       name: "nathan-a-ppmtx"
-      description: "ppmtx app"
+      description: "QX Propulsion Predictive Maintenance app"
       source_code_path: ./
-      # Uncomment to enable on behalf of user API scopes. Available scopes: sql, dashboards.genie, files.files, serving.serving-endpoints
-      # user_api_scopes:
-      #   - sql
+      # Binds the app's Service Principal to the existing Lakebase Autoscaling
+      # project `nathan-a-ppmtx` so the platform injects LAKEBASE_ENDPOINT/PG* at
+      # runtime (resolves `valueFrom: postgres` in app.yaml). The synced Gold
+      # tables live in Postgres schema `an_maintenanceengineering_ods`.
+      resources:
+        - name: "postgres"
+          postgres:
+            branch: "projects/nathan-a-ppmtx/branches/production"
+            database: "projects/nathan-a-ppmtx/branches/production/databases/databricks-postgres"
+            permission: "CAN_CONNECT_AND_CREATE"
+        # Binds the app SP to the Propulsion-Supervisor-Agent (Agent Bricks MAS)
+        # serving endpoint with CAN_QUERY so the Assistant chat tab can invoke it.
+        - name: "serving"
+          serving_endpoint:
+            name: "mas-99316ed5-endpoint"
+            permission: "CAN_QUERY"
+      # On-behalf-of-user API scopes. The Assistant tab invokes the
+      # Propulsion-Supervisor-Agent MAS, whose Genie subagent must run as the
+      # signed-in user (who holds Genie/warehouse/UC access) rather than the app SP.
+      user_api_scopes:
+        - serving.serving-endpoints
+        - genie
+        - sql
 
 targets:
   default:
     default: true
     workspace:
       host: https://adb-620317033646362.2.azuredatabricks.net
+      profile: adb-620317033646362
