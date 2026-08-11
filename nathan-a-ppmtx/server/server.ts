@@ -369,14 +369,14 @@ await createApp({
                 ic.sn AS engine_sn,
                 snap.installed_ac AS tail,
                 CASE 
-                  WHEN snap.installed_position = 'LH ENG' THEN 'ENG-1'
-                  WHEN snap.installed_position = 'RH ENG' THEN 'ENG-2'
-                  ELSE snap.installed_position
+                  WHEN TRIM(snap.installed_position) = 'LH ENG' THEN 'ENG-1'
+                  WHEN TRIM(snap.installed_position) = 'RH ENG' THEN 'ENG-2'
+                  ELSE TRIM(snap.installed_position)
                 END AS position,
                 ic.actual_hours AS total_hours,
                 ic.actual_cycles AS total_cycles,
                 ROW_NUMBER() OVER (
-                  PARTITION BY snap.installed_ac, snap.installed_position 
+                  PARTITION BY snap.installed_ac, TRIM(snap.installed_position)
                   ORDER BY ic.actual_hours DESC
                 ) AS rn
               FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
