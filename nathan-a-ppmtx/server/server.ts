@@ -359,8 +359,53 @@ await createApp({
       });
 
       // ── Engines (fleet aircraft) ─────────────────────────────────────
-      app.get("/api/engines", async (_req: Request, res: Response) => {
-        res.json({ data: MOCK_ENGINES, source: "mock" });
+      app.get("/api/engines", async (req: Request, res: Response) => {
+        const limit = clampLimit(req.query.limit, 200, 2000);
+        try {
+          const result = await appkit.lakebase.query(
+            `WITH engine_tsn AS (
+              SELECT 
+                ic.sn AS engine_sn,
+                snap.installed_ac AS tail,
+                snap.installed_position AS position,
+                ic.actual_hours AS total_hours,
+                ic.actual_cycles AS total_cycles,
+                ROW_NUMBER() OVER (
+                  PARTITION BY snap.installed_ac, snap.installed_position 
+                  ORDER BY ic.actual_hours DESC
+                ) AS rn
+              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
+              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
+              JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot snap ON ic.sn = snap.sn
+              WHERE ic.control = 'TSN'
+                AND p.pn = 'CF34-8E5G01'
+                AND snap.installed_ac IS NOT NULL
+            ),
+            engine_tso AS (
+              SELECT ic.sn, d.calendar_date AS last_shop_visit
+              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
+              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
+              JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON ic.reset_date_key = d.dim_date_key
+              WHERE ic.control = 'TSO'
+                AND p.pn = 'CF34-8E5G01'
+            )
+            SELECT 
+              t.engine_sn, t.tail, t.position,
+              t.total_hours::integer AS total_hours,
+              t.total_cycles::integer AS total_cycles,
+              tso.last_shop_visit
+            FROM engine_tsn t
+            LEFT JOIN engine_tso tso ON t.engine_sn = tso.sn
+            WHERE t.rn = 1
+            ORDER BY t.tail
+            LIMIT $1`,
+            [limit],
+          );
+          res.json({ data: result.rows, source: "live" });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/engines fallback: ${err}`);
+          res.json({ data: MOCK_ENGINES, source: "mock" });
+        }
       });
 
       // ── Serviceable Spares (spare engines / APUs not installed, no active RO) ─────────────────────
