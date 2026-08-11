@@ -9,6 +9,7 @@ import {
   MOCK_ENGINES,
   MOCK_APUS,
   MOCK_KPIS,
+  MOCK_FLEET_LEADERS,
 } from "./mock-data.js";
 import {
   mapDefect,
@@ -459,6 +460,70 @@ await createApp({
         } catch (err) {
           console.warn(`[Lakebase] /api/apus fallback: ${err}`);
           res.json({ data: MOCK_APUS, source: "mock" });
+        }
+      });
+
+      // ── Fleet Leaders (highest-time engine and APU currently in service) ─────────────────────
+      app.get("/api/fleet-leaders", async (_req: Request, res: Response) => {
+        try {
+          const result = await appkit.lakebase.query(
+            `WITH engine_leader AS (
+              SELECT 
+                ic.sn, snap.installed_ac AS tail,
+                ic.actual_hours::integer AS total_hours,
+                ic.actual_cycles::integer AS total_cycles,
+                ROW_NUMBER() OVER (ORDER BY ic.actual_hours DESC) AS rn
+              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
+              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
+              JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot snap ON ic.sn = snap.sn
+              WHERE ic.control = 'TSN'
+                AND p.pn = 'CF34-8E5G01'
+                AND snap.installed_ac IS NOT NULL
+                AND ic.actual_hours > 0
+            ),
+            apu_leader AS (
+              SELECT 
+                ic.sn, snap.installed_ac AS tail,
+                ic.actual_hours::integer AS total_hours,
+                ic.actual_cycles::integer AS total_cycles,
+                ROW_NUMBER() OVER (ORDER BY ic.actual_hours DESC) AS rn
+              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
+              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
+              JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot snap ON ic.sn = snap.sn
+              WHERE ic.control = 'TSN'
+                AND p.pn = '4505001B'
+                AND snap.installed_ac IS NOT NULL
+            )
+            SELECT 'ENGINE' AS type, sn, tail, total_hours, total_cycles
+            FROM engine_leader WHERE rn = 1
+            UNION ALL
+            SELECT 'APU' AS type, sn, tail, total_hours, total_cycles
+            FROM apu_leader WHERE rn = 1`,
+          );
+          
+          const data: { engine?: Record<string, unknown>; apu?: Record<string, unknown> } = {};
+          result.rows.forEach((row: Record<string, unknown>) => {
+            if (row.type === "ENGINE") {
+              data.engine = {
+                sn: String(row.sn ?? ""),
+                tail: String(row.tail ?? ""),
+                hours: Number(row.total_hours ?? 0),
+                cycles: Number(row.total_cycles ?? 0),
+              };
+            } else if (row.type === "APU") {
+              data.apu = {
+                sn: String(row.sn ?? ""),
+                tail: String(row.tail ?? ""),
+                hours: Number(row.total_hours ?? 0),
+                cycles: Number(row.total_cycles ?? 0),
+              };
+            }
+          });
+          
+          res.json({ data, source: "live" });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/fleet-leaders fallback: ${err}`);
+          res.json(MOCK_FLEET_LEADERS);
         }
       });
 

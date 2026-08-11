@@ -103,3 +103,11 @@ export const MOCK_APUS: Row[] = [
   { apuSN: "APU-621", tail: "N621QX", totalHours: 4800, totalCycles: 7200, lastShopVisit: "2025-06-05", parts: [] },
   { apuSN: "APU-623", tail: "N623QX", totalHours: 6100, totalCycles: 9100, lastShopVisit: "2024-12-10", parts: [] },
 ];
+
+export const MOCK_FLEET_LEADERS = {
+  data: {
+    engine: { sn: "ESN-31042", tail: "N628QX", hours: 16624, cycles: 11324 },
+    apu: { sn: "APU-623", tail: "N623QX", hours: 6100, cycles: 9100 },
+  },
+  source: "mock",
+};

@@ -72,6 +72,21 @@ export interface APUConfig {
   [key: string]: unknown;
 }
 
+export interface FleetLeader {
+  sn: string;
+  tail: string;
+  hours: number;
+  cycles: number;
+}
+
+export interface FleetLeadersResponse {
+  data: {
+    engine?: FleetLeader;
+    apu?: FleetLeader;
+  };
+  source: "live" | "mock";
+}
+
 export const MOCK_DEFECTS: Defect[] = [
   { id: "DEF-2026-0412", tail: "N628QX", ata: "73-21", ataDesc: "Engine Fuel & Control", station: "PDX", date: "2026-05-28", narrative: "FUEL FLOW FLUCTUATION ON ENG 1 DURING CLIMB", resolution: "Replaced fuel control unit P/N 1301M91G05 S/N FCU-4421", impact: "DELAY", delayMinutes: 47, linkedPartSN: "FCU-4421", linkedPartPN: "1301M91G05", confidence: "HIGH", deferral: false },
   { id: "DEF-2026-0398", tail: "N631QX", ata: "72-50", ataDesc: "Engine Turbine", station: "SEA", date: "2026-05-25", narrative: "HIGH EGT MARGIN LOSS ON ENG 2 TREND MONITORING", resolution: "Borescope inspection — HPT blade tip erosion noted. Engine scheduled for shop visit.", impact: "NONE", delayMinutes: 0, linkedPartSN: "HPT-8829", linkedPartPN: "1538M72P01", confidence: "MEDIUM", deferral: true },
@@ -263,3 +278,11 @@ export const CRITICAL_SPARE_PARTS: CriticalSparePart[] = [
   { name: "ENG SCV", partNumbers: [{ pn: "4120T05P04", quantity: 3 }] },
   { name: "APU FADEC", partNumbers: [{ pn: "4505003M", quantity: 2 }] },
 ];
+
+export const MOCK_FLEET_LEADERS: FleetLeadersResponse = {
+  data: {
+    engine: { sn: "ESN-31038", tail: "N622QX", hours: 15300, cycles: 22100 },
+    apu: { sn: "APU-623", tail: "N623QX", hours: 6100, cycles: 9100 },
+  },
+  source: "mock",
+};

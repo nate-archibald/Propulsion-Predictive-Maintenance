@@ -17,10 +17,12 @@ import {
   Waves,
   ClipboardList,
   CalendarRange,
+  Zap,
 } from "lucide-react";
 import {
   DEFECTS_BY_ATA,
   WEEKLY_DEFECT_TREND,
+  type FleetLeadersResponse,
 } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 
@@ -112,6 +114,9 @@ export default function HomePage() {
     esns: string[];
     type: string;
   }>(`/api/serviceable-spares?type=${sparesType}`);
+  const { data: fleetLeadersResp, source: fleetLeadersSource } = useLakebaseData<FleetLeadersResponse>(
+    "/api/fleet-leaders"
+  );
 
   const kpi = kpiRows[0];
   // Only show the full-page skeleton on the very first load; once we have data,
@@ -252,6 +257,85 @@ export default function HomePage() {
           testId="metric-ecmp"
         />
       </div>
+
+      {/* Fleet Leaders Widget */}
+      <Card data-testid="fleet-leaders-widget">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Zap className="h-4 w-4" />
+              Fleet Leaders
+            </CardTitle>
+            <ConnectionStatus source={fleetLeadersSource} context="fleet" />
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">Highest time in service</p>
+        </CardHeader>
+        <CardContent>
+          {fleetLeadersSource === "loading" ? (
+            <Skeleton className="h-20 w-full" />
+          ) : (
+            <div className="grid md:grid-cols-2 gap-4">
+              {/* Engine Leader */}
+              <div className="border rounded-md p-3 bg-muted/30">
+                <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Engine</p>
+                {fleetLeadersResp[0]?.data?.engine ? (
+                  <div className="space-y-1.5">
+                    <div>
+                      <p className="text-xs text-muted-foreground">S/N</p>
+                      <p className="text-sm font-semibold font-mono">{fleetLeadersResp[0].data.engine.sn}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Tail</p>
+                        <p className="text-sm font-medium">{fleetLeadersResp[0].data.engine.tail}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Hours</p>
+                        <p className="text-sm font-medium">{fleetLeadersResp[0].data.engine.hours.toLocaleString()}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Cycles</p>
+                      <p className="text-sm font-medium">{fleetLeadersResp[0].data.engine.cycles.toLocaleString()}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No engine data</p>
+                )}
+              </div>
+
+              {/* APU Leader */}
+              <div className="border rounded-md p-3 bg-muted/30">
+                <p className="text-xs font-medium text-muted-foreground uppercase mb-2">APU</p>
+                {fleetLeadersResp[0]?.data?.apu ? (
+                  <div className="space-y-1.5">
+                    <div>
+                      <p className="text-xs text-muted-foreground">S/N</p>
+                      <p className="text-sm font-semibold font-mono">{fleetLeadersResp[0].data.apu.sn}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Tail</p>
+                        <p className="text-sm font-medium">{fleetLeadersResp[0].data.apu.tail}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Hours</p>
+                        <p className="text-sm font-medium">{fleetLeadersResp[0].data.apu.hours.toLocaleString()}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Cycles</p>
+                      <p className="text-sm font-medium">{fleetLeadersResp[0].data.apu.cycles.toLocaleString()}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No APU data</p>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Charts Row */}
       <div className="grid lg:grid-cols-2 gap-6">
