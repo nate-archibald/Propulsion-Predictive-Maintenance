@@ -112,9 +112,7 @@ export default function EnginesPage() {
                       </div>
                       <div>
                         <p className="text-muted-foreground">Position</p>
-                        <p className="font-medium">
-                          ENG-{eng.position === "L" ? "1" : "2"}
-                        </p>
+                        <p className="font-medium">{eng.position}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Hours</p>
