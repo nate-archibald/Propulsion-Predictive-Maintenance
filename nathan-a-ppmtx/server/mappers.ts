@@ -131,11 +131,11 @@ export function mapEngine(r: Row): Row {
   return {
     engineSN: String(r.engine_sn ?? ""),
     tail: String(r.tail ?? ""),
-    engineType: String(r.aircraft_type ?? ""),
-    position: "",
+    engineType: "CF34-8E",  // All filtered engines are CF34-8E5G01, display as CF34-8E
+    position: String(r.position ?? ""),
     totalHours: num(r.total_hours),
     totalCycles: num(r.total_cycles),
-    lastShopVisit: "",
+    lastShopVisit: isoDate(r.last_shop_visit),
     parts: [],
   };
 }

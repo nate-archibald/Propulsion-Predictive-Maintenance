@@ -15,7 +15,6 @@ import {
   mapWeeklyTrend,
   mapPart,
   mapSpare,
-  mapEngine,
 } from "./mappers.js";
 
 // Postgres schema holding the reverse-ETL synced Gold tables (qx_ppmtx_synced_gold_*).
@@ -143,6 +142,92 @@ await createApp({
         } catch (err) {
           res.json({ connected: false, mode: "autoscaling", schema: S, error: String(err) });
         }
+      });
+
+      // ── Diagnostic endpoint for schema inspection ─────────────────────
+      app.get("/api/debug/schema-inspection", async (_req: Request, res: Response) => {
+        const diagnostics: any = {};
+
+        // 1. List tables
+        try {
+          const result = await appkit.lakebase.query(
+            `SELECT table_name FROM information_schema.tables WHERE table_schema = $1 ORDER BY table_name`,
+            [S]
+          );
+          diagnostics.tables = result.rows.map((r: any) => r.table_name);
+        } catch (err) {
+          diagnostics.tables_error = String(err);
+        }
+
+        // 2. Inventory control columns
+        try {
+          const result = await appkit.lakebase.query(
+            `SELECT column_name, data_type FROM information_schema.columns 
+             WHERE table_schema = $1 AND table_name LIKE '%inventory_control%' 
+             ORDER BY table_name, ordinal_position`,
+            [S]
+          );
+          diagnostics.inventory_control_columns = result.rows;
+        } catch (err) {
+          diagnostics.inventory_control_columns_error = String(err);
+        }
+
+        // 3. Inventory snapshot columns
+        try {
+          const result = await appkit.lakebase.query(
+            `SELECT column_name, data_type FROM information_schema.columns 
+             WHERE table_schema = $1 AND table_name LIKE '%inventory_snapshot%' 
+             ORDER BY table_name, ordinal_position`,
+            [S]
+          );
+          diagnostics.inventory_snapshot_columns = result.rows;
+        } catch (err) {
+          diagnostics.inventory_snapshot_columns_error = String(err);
+        }
+
+        // 4. Distinct control values
+        try {
+          const result = await appkit.lakebase.query(
+            `SELECT DISTINCT control FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ORDER BY control LIMIT 50`
+          );
+          diagnostics.control_values = result.rows.map((r: any) => r.control);
+        } catch (err) {
+          diagnostics.control_values_error = String(err);
+        }
+
+        // 5. Sample inventory snapshot rows
+        try {
+          const result = await appkit.lakebase.query(
+            `SELECT sn, installed_ac, installed_position FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot 
+             WHERE installed_ac IS NOT NULL LIMIT 5`
+          );
+          diagnostics.sample_inventory_snapshot = result.rows;
+        } catch (err) {
+          diagnostics.sample_inventory_snapshot_error = String(err);
+        }
+
+        // 6. Engine part numbers
+        try {
+          const result = await appkit.lakebase.query(
+            `SELECT DISTINCT pn, pn_description FROM ${S}.qx_ppmtx_synced_gold_dim_part 
+             WHERE pn ILIKE '%CF34%' OR pn_description ILIKE '%CF34%' LIMIT 20`
+          );
+          diagnostics.engine_part_numbers = result.rows;
+        } catch (err) {
+          diagnostics.engine_part_numbers_error = String(err);
+        }
+
+        // 7. Check TSN count
+        try {
+          const result = await appkit.lakebase.query(
+            `SELECT COUNT(*) as count FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control WHERE control = 'TSN'`
+          );
+          diagnostics.tsn_row_count = result.rows[0]?.count;
+        } catch (err) {
+          diagnostics.tsn_row_count_error = String(err);
+        }
+
+        res.json(diagnostics);
       });
 
       // ── Defects (list) ───────────────────────────────────────────────
@@ -274,21 +359,8 @@ await createApp({
       });
 
       // ── Engines (fleet aircraft) ─────────────────────────────────────
-      app.get("/api/engines", async (req: Request, res: Response) => {
-        const limit = clampLimit(req.query.limit, 200, 2000);
-        try {
-          const result = await appkit.lakebase.query(
-            `SELECT a.ac AS tail, a.aircraft_type
-             FROM ${S}.qx_ppmtx_synced_gold_dim_aircraft a
-             ORDER BY a.ac
-             LIMIT $1`,
-            [limit],
-          );
-          res.json({ data: result.rows.map(mapEngine), source: "live" });
-        } catch (err) {
-          console.warn(`[Lakebase] /api/engines fallback: ${err}`);
-          res.json({ data: MOCK_ENGINES, source: "mock" });
-        }
+      app.get("/api/engines", async (_req: Request, res: Response) => {
+        res.json({ data: MOCK_ENGINES, source: "mock" });
       });
 
       // ── Serviceable Spares (spare engines / APUs not installed, no active RO) ─────────────────────
