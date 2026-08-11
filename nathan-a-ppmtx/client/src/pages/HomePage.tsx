@@ -272,64 +272,42 @@ export default function HomePage() {
         </CardHeader>
         <CardContent>
           {fleetLeadersSource === "loading" ? (
-            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-12 w-full" />
           ) : (
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-3">
               {/* Engine Leader */}
-              <div className="border rounded-md p-3 bg-muted/30">
-                <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Engine</p>
+              <div className="flex items-center gap-3 py-1">
+                <span className="text-xs font-medium text-muted-foreground min-w-12">Engine:</span>
                 {fleetLeadersResp[0]?.engine ? (
-                  <div className="space-y-1.5">
-                    <div>
-                      <p className="text-xs text-muted-foreground">S/N</p>
-                      <p className="text-sm font-semibold font-mono">{fleetLeadersResp[0].engine.sn}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Tail</p>
-                        <p className="text-sm font-medium">{fleetLeadersResp[0].engine.tail}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Hours</p>
-                        <p className="text-sm font-medium">{fleetLeadersResp[0].engine.hours.toLocaleString()}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Cycles</p>
-                      <p className="text-sm font-medium">{fleetLeadersResp[0].engine.cycles.toLocaleString()}</p>
-                    </div>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="font-mono font-semibold min-w-20">{fleetLeadersResp[0].engine.sn}</span>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="font-medium min-w-12">{fleetLeadersResp[0].engine.tail}</span>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="min-w-16">{fleetLeadersResp[0].engine.hours.toLocaleString()} hrs</span>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="min-w-16">{fleetLeadersResp[0].engine.cycles.toLocaleString()} cyc</span>
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">No engine data</p>
+                  <p className="text-xs text-muted-foreground">No data</p>
                 )}
               </div>
 
               {/* APU Leader */}
-              <div className="border rounded-md p-3 bg-muted/30">
-                <p className="text-xs font-medium text-muted-foreground uppercase mb-2">APU</p>
+              <div className="flex items-center gap-3 py-1">
+                <span className="text-xs font-medium text-muted-foreground min-w-12">APU:</span>
                 {fleetLeadersResp[0]?.apu ? (
-                  <div className="space-y-1.5">
-                    <div>
-                      <p className="text-xs text-muted-foreground">S/N</p>
-                      <p className="text-sm font-semibold font-mono">{fleetLeadersResp[0].apu.sn}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Tail</p>
-                        <p className="text-sm font-medium">{fleetLeadersResp[0].apu.tail}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Hours</p>
-                        <p className="text-sm font-medium">{fleetLeadersResp[0].apu.hours.toLocaleString()}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Cycles</p>
-                      <p className="text-sm font-medium">{fleetLeadersResp[0].apu.cycles.toLocaleString()}</p>
-                    </div>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="font-mono font-semibold min-w-20">{fleetLeadersResp[0].apu.sn}</span>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="font-medium min-w-12">{fleetLeadersResp[0].apu.tail}</span>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="min-w-16">{fleetLeadersResp[0].apu.hours.toLocaleString()} hrs</span>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="min-w-16">{fleetLeadersResp[0].apu.cycles.toLocaleString()} cyc</span>
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">No APU data</p>
+                  <p className="text-xs text-muted-foreground">No data</p>
                 )}
               </div>
             </div>
