@@ -22,7 +22,7 @@ import {
 import {
   DEFECTS_BY_ATA,
   WEEKLY_DEFECT_TREND,
-  type FleetLeadersResponse,
+  type FleetLeadersData,
 } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 
@@ -114,7 +114,7 @@ export default function HomePage() {
     esns: string[];
     type: string;
   }>(`/api/serviceable-spares?type=${sparesType}`);
-  const { data: fleetLeadersResp, source: fleetLeadersSource } = useLakebaseData<FleetLeadersResponse>(
+  const { data: fleetLeadersResp, source: fleetLeadersSource } = useLakebaseData<FleetLeadersData>(
     "/api/fleet-leaders"
   );
 
@@ -278,25 +278,25 @@ export default function HomePage() {
               {/* Engine Leader */}
               <div className="border rounded-md p-3 bg-muted/30">
                 <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Engine</p>
-                {fleetLeadersResp[0]?.data?.engine ? (
+                {fleetLeadersResp[0]?.engine ? (
                   <div className="space-y-1.5">
                     <div>
                       <p className="text-xs text-muted-foreground">S/N</p>
-                      <p className="text-sm font-semibold font-mono">{fleetLeadersResp[0].data.engine.sn}</p>
+                      <p className="text-sm font-semibold font-mono">{fleetLeadersResp[0].engine.sn}</p>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <p className="text-xs text-muted-foreground">Tail</p>
-                        <p className="text-sm font-medium">{fleetLeadersResp[0].data.engine.tail}</p>
+                        <p className="text-sm font-medium">{fleetLeadersResp[0].engine.tail}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Hours</p>
-                        <p className="text-sm font-medium">{fleetLeadersResp[0].data.engine.hours.toLocaleString()}</p>
+                        <p className="text-sm font-medium">{fleetLeadersResp[0].engine.hours.toLocaleString()}</p>
                       </div>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Cycles</p>
-                      <p className="text-sm font-medium">{fleetLeadersResp[0].data.engine.cycles.toLocaleString()}</p>
+                      <p className="text-sm font-medium">{fleetLeadersResp[0].engine.cycles.toLocaleString()}</p>
                     </div>
                   </div>
                 ) : (
@@ -307,25 +307,25 @@ export default function HomePage() {
               {/* APU Leader */}
               <div className="border rounded-md p-3 bg-muted/30">
                 <p className="text-xs font-medium text-muted-foreground uppercase mb-2">APU</p>
-                {fleetLeadersResp[0]?.data?.apu ? (
+                {fleetLeadersResp[0]?.apu ? (
                   <div className="space-y-1.5">
                     <div>
                       <p className="text-xs text-muted-foreground">S/N</p>
-                      <p className="text-sm font-semibold font-mono">{fleetLeadersResp[0].data.apu.sn}</p>
+                      <p className="text-sm font-semibold font-mono">{fleetLeadersResp[0].apu.sn}</p>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <p className="text-xs text-muted-foreground">Tail</p>
-                        <p className="text-sm font-medium">{fleetLeadersResp[0].data.apu.tail}</p>
+                        <p className="text-sm font-medium">{fleetLeadersResp[0].apu.tail}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Hours</p>
-                        <p className="text-sm font-medium">{fleetLeadersResp[0].data.apu.hours.toLocaleString()}</p>
+                        <p className="text-sm font-medium">{fleetLeadersResp[0].apu.hours.toLocaleString()}</p>
                       </div>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Cycles</p>
-                      <p className="text-sm font-medium">{fleetLeadersResp[0].data.apu.cycles.toLocaleString()}</p>
+                      <p className="text-sm font-medium">{fleetLeadersResp[0].apu.cycles.toLocaleString()}</p>
                     </div>
                   </div>
                 ) : (

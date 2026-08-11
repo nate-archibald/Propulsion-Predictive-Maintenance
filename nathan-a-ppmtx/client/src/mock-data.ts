@@ -79,11 +79,13 @@ export interface FleetLeader {
   cycles: number;
 }
 
+export interface FleetLeadersData {
+  engine?: FleetLeader;
+  apu?: FleetLeader;
+}
+
 export interface FleetLeadersResponse {
-  data: {
-    engine?: FleetLeader;
-    apu?: FleetLeader;
-  };
+  data: FleetLeadersData;
   source: "live" | "mock";
 }
 
