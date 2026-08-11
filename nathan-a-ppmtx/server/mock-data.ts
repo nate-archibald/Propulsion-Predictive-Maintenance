@@ -97,3 +97,9 @@ export const MOCK_KPIS: Row = {
     (d) => typeof d.narrative === "string" && d.narrative.toUpperCase().includes("ECMP"),
   ).length,
 };
+
+export const MOCK_APUS: Row[] = [
+  { apuSN: "APU-619", tail: "N619QX", totalHours: 5200, totalCycles: 7800, lastShopVisit: "2025-04-18", parts: [] },
+  { apuSN: "APU-621", tail: "N621QX", totalHours: 4800, totalCycles: 7200, lastShopVisit: "2025-06-05", parts: [] },
+  { apuSN: "APU-623", tail: "N623QX", totalHours: 6100, totalCycles: 9100, lastShopVisit: "2024-12-10", parts: [] },
+];

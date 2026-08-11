@@ -62,6 +62,16 @@ export interface EngineConfig {
   [key: string]: unknown;
 }
 
+export interface APUConfig {
+  apuSN: string;
+  tail: string;
+  totalHours: number;
+  totalCycles: number;
+  lastShopVisit: string;
+  parts: Part[];
+  [key: string]: unknown;
+}
+
 export const MOCK_DEFECTS: Defect[] = [
   { id: "DEF-2026-0412", tail: "N628QX", ata: "73-21", ataDesc: "Engine Fuel & Control", station: "PDX", date: "2026-05-28", narrative: "FUEL FLOW FLUCTUATION ON ENG 1 DURING CLIMB", resolution: "Replaced fuel control unit P/N 1301M91G05 S/N FCU-4421", impact: "DELAY", delayMinutes: 47, linkedPartSN: "FCU-4421", linkedPartPN: "1301M91G05", confidence: "HIGH", deferral: false },
   { id: "DEF-2026-0398", tail: "N631QX", ata: "72-50", ataDesc: "Engine Turbine", station: "SEA", date: "2026-05-25", narrative: "HIGH EGT MARGIN LOSS ON ENG 2 TREND MONITORING", resolution: "Borescope inspection — HPT blade tip erosion noted. Engine scheduled for shop visit.", impact: "NONE", delayMinutes: 0, linkedPartSN: "HPT-8829", linkedPartPN: "1538M72P01", confidence: "MEDIUM", deferral: true },
@@ -121,6 +131,12 @@ export const MOCK_ENGINES: EngineConfig[] = [
   { engineSN: "ESN-31048", tail: "N633QX", engineType: "CF34-8E", position: "L", totalHours: 9800, totalCycles: 14500, lastShopVisit: "2024-11-05", parts: MOCK_PARTS.filter(p => p.engineSN === "ESN-31048") },
   { engineSN: "ESN-31055", tail: "N640QX", engineType: "CF34-8E", position: "R", totalHours: 3200, totalCycles: 4800, lastShopVisit: "2025-06-01", parts: MOCK_PARTS.filter(p => p.engineSN === "ESN-31055") },
   { engineSN: "ESN-31047", tail: "N642QX", engineType: "CF34-8E", position: "L", totalHours: 14100, totalCycles: 19800, lastShopVisit: "2023-09-15", parts: MOCK_PARTS.filter(p => p.engineSN === "ESN-31047") },
+];
+
+export const MOCK_APUS: APUConfig[] = [
+  { apuSN: "APU-619", tail: "N619QX", totalHours: 5200, totalCycles: 7800, lastShopVisit: "2025-04-18", parts: [] },
+  { apuSN: "APU-621", tail: "N621QX", totalHours: 4800, totalCycles: 7200, lastShopVisit: "2025-06-05", parts: [] },
+  { apuSN: "APU-623", tail: "N623QX", totalHours: 6100, totalCycles: 9100, lastShopVisit: "2024-12-10", parts: [] },
 ];
 
 // ─── Derived aggregation data for charts ─────────────────────────────────

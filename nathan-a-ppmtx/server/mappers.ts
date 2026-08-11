@@ -139,3 +139,14 @@ export function mapEngine(r: Row): Row {
     parts: [],
   };
 }
+
+export function mapAPU(r: Row): Row {
+  return {
+    apuSN: String(r.apu_sn ?? ""),
+    tail: String(r.tail ?? ""),
+    totalHours: num(r.total_hours),
+    totalCycles: num(r.total_cycles),
+    lastShopVisit: isoDate(r.last_shop_visit),
+    parts: [],
+  };
+}

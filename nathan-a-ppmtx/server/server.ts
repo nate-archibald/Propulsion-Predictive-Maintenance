@@ -7,6 +7,7 @@ import {
   MOCK_PARTS,
   MOCK_SPARES,
   MOCK_ENGINES,
+  MOCK_APUS,
   MOCK_KPIS,
 } from "./mock-data.js";
 import {
@@ -16,6 +17,7 @@ import {
   mapPart,
   mapSpare,
   mapEngine,
+  mapAPU,
 } from "./mappers.js";
 
 // Postgres schema holding the reverse-ETL synced Gold tables (qx_ppmtx_synced_gold_*).
@@ -410,6 +412,53 @@ await createApp({
         } catch (err) {
           console.warn(`[Lakebase] /api/engines fallback: ${err}`);
           res.json({ data: MOCK_ENGINES, source: "mock" });
+        }
+      });
+
+      // ── APUs (auxiliary power units, fleet aircraft) ───────────────────────────────────────
+      app.get("/api/apus", async (req: Request, res: Response) => {
+        const limit = clampLimit(req.query.limit, 200, 2000);
+        try {
+          const result = await appkit.lakebase.query(
+            `WITH apu_tsn AS (
+              SELECT 
+                ic.sn AS apu_sn,
+                snap.installed_ac AS tail,
+                ic.actual_hours AS total_hours,
+                ic.actual_cycles AS total_cycles,
+                ROW_NUMBER() OVER (PARTITION BY snap.installed_ac ORDER BY ic.actual_hours DESC) AS rn
+              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
+              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
+              JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot snap ON ic.sn = snap.sn
+              WHERE ic.control = 'TSN'
+                AND p.pn = '4505001B'
+                AND snap.installed_ac IS NOT NULL
+            ),
+            apu_tsr AS (
+              SELECT ic.sn, d.calendar_date AS last_shop_visit
+              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
+              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
+              JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON ic.reset_date_key = d.dim_date_key
+              WHERE ic.control = 'TSR'
+                AND p.pn = '4505001B'
+            )
+            SELECT 
+              t.apu_sn,
+              t.tail,
+              t.total_hours::integer AS total_hours,
+              t.total_cycles::integer AS total_cycles,
+              tsr.last_shop_visit
+            FROM apu_tsn t
+            LEFT JOIN apu_tsr tsr ON t.apu_sn = tsr.sn
+            WHERE t.rn = 1
+            ORDER BY t.tail
+            LIMIT $1`,
+            [limit],
+          );
+          res.json({ data: result.rows.map(mapAPU), source: "live" });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/apus fallback: ${err}`);
+          res.json({ data: MOCK_APUS, source: "mock" });
         }
       });
 

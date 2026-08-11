@@ -7,9 +7,10 @@ import {
   CardTitle,
   Input,
   Skeleton,
+  Button,
 } from "@databricks/appkit-ui/react";
 import { Search, Settings, AlertTriangle } from "lucide-react";
-import type { EngineConfig } from "../mock-data";
+import type { EngineConfig, APUConfig } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 
 export default function EnginesPage() {
@@ -17,19 +18,34 @@ export default function EnginesPage() {
   const navigate = useNavigate();
   const initialSearch = searchParams.get("search") ?? "";
   const [search, setSearch] = useState(initialSearch);
-  const [selectedEngine, setSelectedEngine] = useState<EngineConfig | null>(
-    null
-  );
-  const { data: engines, source } = useLakebaseData<EngineConfig>("/api/engines");
+  const [selectedTab, setSelectedTab] = useState<"engines" | "apus">("engines");
+  const [selectedEngine, setSelectedEngine] = useState<EngineConfig | null>(null);
+  const [selectedAPU, setSelectedAPU] = useState<APUConfig | null>(null);
+
+  const { data: engines, source: enginesSource } = useLakebaseData<EngineConfig>("/api/engines");
+  const { data: apus, source: apusSource } = useLakebaseData<APUConfig>("/api/apus");
+  
+  const source = selectedTab === "engines" ? enginesSource : apusSource;
   const loading = source === "loading";
 
-  const filtered = engines.filter((e) => {
+  const allData = selectedTab === "engines" ? engines : apus;
+
+  const filtered = allData.filter((item: any) => {
     const q = search.toLowerCase();
-    return (
-      e.engineSN.toLowerCase().includes(q) ||
-      e.tail.toLowerCase().includes(q) ||
-      e.engineType.toLowerCase().includes(q)
-    );
+    if (selectedTab === "engines") {
+      const engine = item as EngineConfig;
+      return (
+        engine.engineSN.toLowerCase().includes(q) ||
+        engine.tail.toLowerCase().includes(q) ||
+        engine.engineType.toLowerCase().includes(q)
+      );
+    } else {
+      const apu = item as APUConfig;
+      return (
+        apu.apuSN.toLowerCase().includes(q) ||
+        apu.tail.toLowerCase().includes(q)
+      );
+    }
   });
 
   if (loading) return <Skeleton className="h-96 w-full" />;
@@ -39,101 +55,175 @@ export default function EnginesPage() {
       <div>
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-2xl font-bold tracking-tight" data-testid="engines-heading">
-            Engine Genealogy
+            Engine & APU Genealogy
           </h2>
           <ConnectionStatus source={source} context="fleet" />
         </div>
-        <p className="text-muted-foreground mt-1">
-          Full configuration and history by Engine S/N
-        </p>
+        <div className="flex items-center justify-between mt-3">
+          <p className="text-muted-foreground">
+            Full configuration and history by {selectedTab === "engines" ? "Engine" : "APU"} S/N
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant={selectedTab === "engines" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setSelectedTab("engines");
+                setSelectedAPU(null);
+              }}
+            >
+              Engines
+            </Button>
+            <Button
+              variant={selectedTab === "apus" ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setSelectedTab("apus");
+                setSelectedEngine(null);
+              }}
+            >
+              APUs
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Search */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="ESN-31042, N628QX..."
+          placeholder={selectedTab === "engines" ? "ESN-31042, N628QX..." : "APU-619, N619QX..."}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-10"
           data-testid="engines-search-input"
-          aria-label="Search engines"
+          aria-label={`Search ${selectedTab}`}
         />
       </div>
 
       {filtered.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
-            No engines match your search.
+            No {selectedTab === "engines" ? "engines" : "APUs"} match your search.
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-6">
-          {/* Engine cards */}
+          {/* Cards (Engines or APUs) */}
           <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map((eng) => {
-              const llpCount = eng.parts.filter(
-                (p) =>
-                  p.isLLP &&
-                  p.cyclesRemaining !== null &&
-                  p.cyclesRemaining < 1000
-              ).length;
-              return (
-                <Card
-                  key={eng.engineSN}
-                  className={`cursor-pointer transition-all hover:shadow-md ${selectedEngine?.engineSN === eng.engineSN ? "ring-2 ring-accent" : ""}`}
-                  onClick={() => setSelectedEngine(eng)}
-                  role="link"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ")
-                      setSelectedEngine(eng);
-                  }}
-                >
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm flex items-center justify-between">
-                      <span className="flex items-center gap-2">
-                        <Settings className="h-4 w-4" />
-                        <span className="font-mono">{eng.engineSN}</span>
-                      </span>
-                      {llpCount > 0 && (
-                        <span className="flex items-center gap-1 text-destructive text-xs">
-                          <AlertTriangle className="h-3 w-3" />
-                          {llpCount} LLP
+            {selectedTab === "engines" ? (
+              filtered.map((eng: any) => {
+                const engine = eng as EngineConfig;
+                const llpCount = engine.parts.filter(
+                  (p) =>
+                    p.isLLP &&
+                    p.cyclesRemaining !== null &&
+                    p.cyclesRemaining < 1000
+                ).length;
+                return (
+                  <Card
+                    key={engine.engineSN}
+                    className={`cursor-pointer transition-all hover:shadow-md ${selectedEngine?.engineSN === engine.engineSN ? "ring-2 ring-accent" : ""}`}
+                    onClick={() => setSelectedEngine(engine)}
+                    role="link"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ")
+                        setSelectedEngine(engine);
+                    }}
+                  >
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <Settings className="h-4 w-4" />
+                          <span className="font-mono">{engine.engineSN}</span>
                         </span>
-                      )}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-xs space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-muted-foreground">Tail</p>
-                        <p className="font-medium">{eng.tail}</p>
+                        {llpCount > 0 && (
+                          <span className="flex items-center gap-1 text-destructive text-xs">
+                            <AlertTriangle className="h-3 w-3" />
+                            {llpCount} LLP
+                          </span>
+                        )}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-xs space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="text-muted-foreground">Tail</p>
+                          <p className="font-medium">{engine.tail}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Position</p>
+                          <p className="font-medium">{engine.position}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Hours</p>
+                          <p className="font-medium">
+                            {engine.totalHours.toLocaleString()}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Cycles</p>
+                          <p className="font-medium">
+                            {engine.totalCycles.toLocaleString()}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-muted-foreground">Position</p>
-                        <p className="font-medium">{eng.position}</p>
+                      <p className="text-muted-foreground">
+                        Last shop visit: {engine.lastShopVisit}
+                      </p>
+                    </CardContent>
+                  </Card>
+                );
+              })
+            ) : (
+              filtered.map((apu: any) => {
+                const apuItem = apu as APUConfig;
+                return (
+                  <Card
+                    key={apuItem.apuSN}
+                    className={`cursor-pointer transition-all hover:shadow-md ${selectedAPU?.apuSN === apuItem.apuSN ? "ring-2 ring-accent" : ""}`}
+                    onClick={() => setSelectedAPU(apuItem)}
+                    role="link"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ")
+                        setSelectedAPU(apuItem);
+                    }}
+                  >
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Settings className="h-4 w-4" />
+                        <span className="font-mono">{apuItem.apuSN}</span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-xs space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="text-muted-foreground">Tail</p>
+                          <p className="font-medium">{apuItem.tail}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Hours</p>
+                          <p className="font-medium">
+                            {apuItem.totalHours.toLocaleString()}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Cycles</p>
+                          <p className="font-medium">
+                            {apuItem.totalCycles.toLocaleString()}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-muted-foreground">Hours</p>
-                        <p className="font-medium">
-                          {eng.totalHours.toLocaleString()}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Cycles</p>
-                        <p className="font-medium">
-                          {eng.totalCycles.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                    <p className="text-muted-foreground">
-                      Last shop visit: {eng.lastShopVisit}
-                    </p>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                      <p className="text-muted-foreground">
+                        Last shop visit: {apuItem.lastShopVisit}
+                      </p>
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
           </div>
 
           {/* Selected engine detail */}
@@ -237,6 +327,75 @@ export default function EnginesPage() {
                       )}
                     </tbody>
                   </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Selected APU detail */}
+          {selectedAPU && (
+            <Card data-testid="apu-detail">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  {selectedAPU.apuSN} — APU Configuration
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Tail</p>
+                      <p className="font-medium">{selectedAPU.tail}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Hours</p>
+                      <p className="font-medium">{selectedAPU.totalHours.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Cycles</p>
+                      <p className="font-medium">{selectedAPU.totalCycles.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Last Shop Visit</p>
+                      <p className="font-medium">{selectedAPU.lastShopVisit}</p>
+                    </div>
+                  </div>
+                  {selectedAPU.parts.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/50">
+                            <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                              Part
+                            </th>
+                            <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                              P/N
+                            </th>
+                            <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                              S/N
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedAPU.parts.map((p) => (
+                            <tr
+                              key={p.serialNumber}
+                              className="border-b last:border-0"
+                            >
+                              <td className="py-2 px-3">{p.description}</td>
+                              <td className="py-2 px-3 font-mono text-xs">
+                                {p.partNumber}
+                              </td>
+                              <td className="py-2 px-3 font-mono text-xs">
+                                {p.serialNumber}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
