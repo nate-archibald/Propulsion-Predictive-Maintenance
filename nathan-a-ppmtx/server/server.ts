@@ -15,6 +15,7 @@ import {
   mapWeeklyTrend,
   mapPart,
   mapSpare,
+  mapEngine,
 } from "./mappers.js";
 
 // Postgres schema holding the reverse-ETL synced Gold tables (qx_ppmtx_synced_gold_*).
@@ -401,7 +402,7 @@ await createApp({
             LIMIT $1`,
             [limit],
           );
-          res.json({ data: result.rows, source: "live" });
+          res.json({ data: result.rows.map(mapEngine), source: "live" });
         } catch (err) {
           console.warn(`[Lakebase] /api/engines fallback: ${err}`);
           res.json({ data: MOCK_ENGINES, source: "mock" });
