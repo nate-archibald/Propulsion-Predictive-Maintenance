@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, Fragment, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import {
   Card,
@@ -32,6 +32,7 @@ export default function EnginesPage() {
     children: BuildUpPart[];
   }
   
+  const buildUpRef = useRef<HTMLDivElement>(null);
   const [buildUp, setBuildUp] = useState<BuildUpPart[]>([]);
   const [buildUpLoading, setBuildUpLoading] = useState(false);
   const [expandedSns, setExpandedSns] = useState<Set<string>>(new Set());
@@ -47,7 +48,13 @@ export default function EnginesPage() {
     setExpandedSns(new Set()); // reset expansion when switching
     fetch(`/api/engine-buildup/${encodeURIComponent(sn)}`)
       .then((r) => r.json())
-      .then((d) => setBuildUp(d.data || []))
+      .then((d) => {
+        setBuildUp(d.data || []);
+        // Scroll the tree into view after data loads
+        setTimeout(() => {
+          buildUpRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 100);
+      })
       .catch(() => setBuildUp([]))
       .finally(() => setBuildUpLoading(false));
   }, [selectedEngine, selectedAPU, selectedTab]);
@@ -267,19 +274,20 @@ export default function EnginesPage() {
 
           {/* Build-up tree: Installed parts hierarchy */}
           {(selectedEngine || selectedAPU) && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Settings className="h-4 w-4" />
-                  {selectedEngine ? selectedEngine.engineSN : selectedAPU!.apuSN} — Installed Parts
-                  <span className="text-xs font-normal text-muted-foreground ml-2">
-                    ({buildUp.length} components
-                    {buildUp.some((p) => p.children.length > 0)
-                      ? ", click chevron to expand assemblies"
-                      : ""})
-                  </span>
-                </CardTitle>
-              </CardHeader>
+            <div ref={buildUpRef}>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Settings className="h-4 w-4" />
+                    {selectedEngine ? selectedEngine.engineSN : selectedAPU!.apuSN} — Installed Parts
+                    <span className="text-xs font-normal text-muted-foreground ml-2">
+                      ({buildUp.length} components
+                      {buildUp.some((p) => p.children.length > 0)
+                        ? ", click chevron to expand assemblies"
+                        : ""})
+                    </span>
+                  </CardTitle>
+                </CardHeader>
               <CardContent>
                 {buildUpLoading ? (
                   <Skeleton className="h-48 w-full" />
@@ -363,6 +371,7 @@ export default function EnginesPage() {
                 )}
               </CardContent>
             </Card>
+            </div>
           )}
 
           {/* Selected engine detail */}
