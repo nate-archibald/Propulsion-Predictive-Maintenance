@@ -459,6 +459,70 @@ await createApp({
         }
       });
 
+      // ── Engine/APU Build-Up (hierarchical part tree) ───────────────────────────────────────
+      app.get("/api/engine-buildup/:sn", async (req: Request, res: Response) => {
+        const parentSn = req.params.sn;
+        try {
+          // Level 1: direct children of the engine/APU
+          const level1 = await appkit.lakebase.query(
+            `SELECT s.sn, p.pn, p.pn_description AS description,
+                    s.condition, s.installed_position AS position,
+                    s.nha_sn, s.nha_pn
+             FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
+             JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
+             WHERE s.nha_sn = $1
+             ORDER BY p.pn`,
+            [parentSn],
+          );
+
+          // Collect level-1 SNs to find their children (level 2)
+          const level1Sns = level1.rows.map((r: any) => r.sn).filter(Boolean);
+
+          let level2Rows: any[] = [];
+          if (level1Sns.length > 0) {
+            const level2Result = await appkit.lakebase.query(
+              `SELECT s.sn, p.pn, p.pn_description AS description,
+                      s.condition, s.installed_position AS position,
+                      s.nha_sn, s.nha_pn
+               FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
+               JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
+               WHERE s.nha_sn = ANY($1::text[])
+               ORDER BY s.nha_sn, p.pn`,
+              [level1Sns],
+            );
+            level2Rows = level2Result.rows;
+          }
+
+          // Build the tree: attach children to their parent
+          const childrenByParent: Record<string, any[]> = {};
+          for (const row of level2Rows) {
+            const key = row.nha_sn;
+            if (!childrenByParent[key]) childrenByParent[key] = [];
+            childrenByParent[key].push({
+              sn: row.sn,
+              pn: row.pn,
+              description: String(row.description ?? "").replace(/\r\n/g, "").trim(),
+              condition: row.condition,
+              position: row.position,
+            });
+          }
+
+          const tree = level1.rows.map((row: any) => ({
+            sn: row.sn,
+            pn: row.pn,
+            description: String(row.description ?? "").replace(/\r\n/g, "").trim(),
+            condition: row.condition,
+            position: row.position,
+            children: childrenByParent[row.sn] || [],
+          }));
+
+          res.json({ data: tree, parentSn, source: "live" });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/engine-buildup/${parentSn} error: ${err}`);
+          res.json({ data: [], parentSn, source: "mock" });
+        }
+      });
+
       // ── Fleet Leaders (highest-time engine and APU currently in service) ─────────────────────
       app.get("/api/fleet-leaders", async (_req: Request, res: Response) => {
         try {

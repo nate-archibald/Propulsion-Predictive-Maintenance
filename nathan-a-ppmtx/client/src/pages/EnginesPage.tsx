@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import {
   Card,
@@ -21,6 +21,45 @@ export default function EnginesPage() {
   const [selectedTab, setSelectedTab] = useState<"engines" | "apus">("engines");
   const [selectedEngine, setSelectedEngine] = useState<EngineConfig | null>(null);
   const [selectedAPU, setSelectedAPU] = useState<APUConfig | null>(null);
+
+  // Build-up tree state
+  interface BuildUpPart {
+    sn: string;
+    pn: string;
+    description: string;
+    condition: string;
+    position: string | null;
+    children: BuildUpPart[];
+  }
+  
+  const [buildUp, setBuildUp] = useState<BuildUpPart[]>([]);
+  const [buildUpLoading, setBuildUpLoading] = useState(false);
+  const [expandedSns, setExpandedSns] = useState<Set<string>>(new Set());
+
+  // Fetch build-up tree when engine/APU is selected
+  useEffect(() => {
+    const sn = selectedTab === "engines" ? selectedEngine?.engineSN : selectedAPU?.apuSN;
+    if (!sn) {
+      setBuildUp([]);
+      return;
+    }
+    setBuildUpLoading(true);
+    setExpandedSns(new Set()); // reset expansion when switching
+    fetch(`/api/engine-buildup/${encodeURIComponent(sn)}`)
+      .then((r) => r.json())
+      .then((d) => setBuildUp(d.data || []))
+      .catch(() => setBuildUp([]))
+      .finally(() => setBuildUpLoading(false));
+  }, [selectedEngine, selectedAPU, selectedTab]);
+
+  // Toggle expand/collapse for a part SN
+  const toggleExpand = (sn: string) => {
+    setExpandedSns((prev) => {
+      const next = new Set(prev);
+      next.has(sn) ? next.delete(sn) : next.add(sn);
+      return next;
+    });
+  };
 
   const { data: engines, source: enginesSource } = useLakebaseData<EngineConfig>("/api/engines");
   const { data: apus, source: apusSource } = useLakebaseData<APUConfig>("/api/apus");
@@ -226,14 +265,113 @@ export default function EnginesPage() {
             )}
           </div>
 
+          {/* Build-up tree: Installed parts hierarchy */}
+          {(selectedEngine || selectedAPU) && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Settings className="h-4 w-4" />
+                  {selectedEngine ? selectedEngine.engineSN : selectedAPU!.apuSN} — Installed Parts
+                  <span className="text-xs font-normal text-muted-foreground ml-2">
+                    ({buildUp.length} components
+                    {buildUp.some((p) => p.children.length > 0)
+                      ? ", click chevron to expand assemblies"
+                      : ""})
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {buildUpLoading ? (
+                  <Skeleton className="h-48 w-full" />
+                ) : buildUp.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">
+                    No build-up data available.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="py-2.5 px-3 text-left font-medium text-muted-foreground w-8"></th>
+                          <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                            Description
+                          </th>
+                          <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                            P/N
+                          </th>
+                          <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                            S/N
+                          </th>
+                          <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                            Condition
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {buildUp.map((part) => (
+                          <Fragment key={part.sn}>
+                            {/* Level 1 row */}
+                            <tr className="border-b hover:bg-muted/30">
+                              <td className="py-2 px-3">
+                                {part.children.length > 0 && (
+                                  <button
+                                    onClick={() => toggleExpand(part.sn)}
+                                    className="text-muted-foreground hover:text-foreground"
+                                  >
+                                    {expandedSns.has(part.sn) ? "\u25BC" : "\u25B6"}
+                                  </button>
+                                )}
+                              </td>
+                              <td className="py-2 px-3 font-medium">{part.description}</td>
+                              <td className="py-2 px-3 font-mono text-xs">{part.pn}</td>
+                              <td className="py-2 px-3 font-mono text-xs">{part.sn}</td>
+                              <td className="py-2 px-3">
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
+                                  {part.condition}
+                                </span>
+                              </td>
+                            </tr>
+                            {/* Level 2 rows (expanded children) */}
+                            {expandedSns.has(part.sn) &&
+                              part.children.map((child) => (
+                                <tr
+                                  key={child.sn}
+                                  className="border-b bg-muted/10 hover:bg-muted/20"
+                                >
+                                  <td className="py-1.5 px-3"></td>
+                                  <td className="py-1.5 px-3 pl-8 text-muted-foreground">
+                                    {child.description}
+                                  </td>
+                                  <td className="py-1.5 px-3 font-mono text-xs text-muted-foreground">
+                                    {child.pn}
+                                  </td>
+                                  <td className="py-1.5 px-3 font-mono text-xs text-muted-foreground">
+                                    {child.sn}
+                                  </td>
+                                  <td className="py-1.5 px-3">
+                                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted/50">
+                                      {child.condition}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                          </Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Selected engine detail */}
           {selectedEngine && (
             <Card data-testid="engine-detail">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Settings className="h-4 w-4" />
-                  {selectedEngine.engineSN} — {selectedEngine.engineType}{" "}
-                  Configuration
+                  {selectedEngine.engineSN} — Life-Limited Parts (LLP Tracking)
                 </CardTitle>
               </CardHeader>
               <CardContent>
