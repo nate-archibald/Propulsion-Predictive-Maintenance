@@ -25,10 +25,6 @@ import {
 const DB_SCHEMA = process.env.DB_SCHEMA || "an_maintenanceengineering_ods";
 const S = DB_SCHEMA;
 
-// Catalog for Lakebase inventory snapshot tables
-const INVENTORY_CATALOG = "subject_maintenanceengineering_test";
-const INVENTORY_SCHEMA = "an_maintenanceengineering_ods";
-
 // ── Propulsion scoping ───────────────────────────────────────────────
 // This tool only shows PROPULSION (engine/APU) data. The definition mirrors the
 // user's `vw_prop_*` Unity Catalog views (which also scope the Genie spaces).
@@ -685,8 +681,8 @@ await createApp({
           // Using snapshot table for current state (not transaction history)
           const result = await appkit.lakebase.query(
             `SELECT p.pn, COUNT(DISTINCT s.sn)::int AS spare_count
-             FROM ${INVENTORY_CATALOG}.${INVENTORY_SCHEMA}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
-             JOIN ${INVENTORY_CATALOG}.${INVENTORY_SCHEMA}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
+             FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
+             JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
              WHERE p.pn IN (${pnList})
                AND s.installed_ac IS NULL
                AND s.condition IN (${conditionList})
