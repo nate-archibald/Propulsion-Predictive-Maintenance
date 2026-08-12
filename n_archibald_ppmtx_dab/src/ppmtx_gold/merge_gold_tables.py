@@ -91,12 +91,14 @@ print(f"Loaded {len(schemas)} Gold schemas")
 # COMMAND ----------
 
 def merge_dim_part():
-    """Merge dim_part from Silver pn_master (SCD Type 1)."""
+    """Merge dim_part from Silver pn_master + override fallback (SCD Type 1)."""
     source_table = get_silver_table("qx_ppmtx_pn_master")
     target_table = get_gold_table("qx_ppmtx_gold_dim_part")
+    overrides_table = f"{catalog}.{schema}.qx_ppmtx_prop_part_overrides"
 
     print(f"Merging: {target_table}")
     print(f"  Source: {source_table}")
+    print(f"  Overrides: {overrides_table}")
 
     # Read and deduplicate Silver
     silver_df = (
@@ -106,8 +108,7 @@ def merge_dim_part():
     )
 
     # Map columns and generate surrogate key
-    window = Window.orderBy("pn")
-    gold_df = (
+    primary_df = (
         silver_df
         .withColumn("dim_part_key", F.xxhash64(col("pn")))
         .select(
@@ -130,6 +131,38 @@ def merge_dim_part():
             col("gl_expenditure"),
         )
     )
+
+    # Read overrides table (lives in same catalog/schema as gold)
+    overrides_df = (
+        spark.table(overrides_table)
+        .select(
+            F.xxhash64(col("pn")).alias("dim_part_key"),
+            col("pn"),
+            col("pn_description"),
+            lit(None).cast("string").alias("category"),
+            lit(None).cast("string").alias("sub_category"),
+            lit(None).cast("string").alias("expenditure"),
+            lit(None).cast("string").alias("stock_uom"),
+            lit(None).cast("string").alias("shelf_life_flag"),
+            lit(None).cast("decimal(10,2)").alias("shelf_life_days"),
+            lit(None).cast("string").alias("tool_calibration_flag"),
+            lit(None).cast("decimal(10,2)").alias("tool_life_days"),
+            lit(None).cast("string").alias("ri_flag"),
+            lit(None).cast("string").alias("pn_supersede"),
+            lit(None).cast("decimal(10,2)").alias("standard_cost"),
+            lit(None).cast("decimal(10,2)").alias("average_cost"),
+            lit(None).cast("string").alias("gl_company"),
+            lit(None).cast("string").alias("gl_expenditure"),
+        )
+    )
+
+    # Only include override PNs not already in pn_master
+    silver_pns = primary_df.select("pn")
+    overrides_new = overrides_df.join(silver_pns, on="pn", how="left_anti")
+    print(f" Override PNs added: {overrides_new.count()}")
+
+    # Combine primary + fallback sources
+    gold_df = primary_df.unionByName(overrides_new)
 
     # SCD Type 1 MERGE
     gold_df.createOrReplaceTempView("source_dim_part")
@@ -1061,3 +1094,23 @@ for table, count in results.items():
     total_rows += count
 print("-" * 52)
 print(f"{'TOTAL':<40} {total_rows:>10,}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Verify Override Parts
+
+# COMMAND ----------
+
+# Verify override PNs landed in dim_part
+target = get_gold_table("qx_ppmtx_gold_dim_part")
+check = spark.sql(f"""
+    SELECT pn, pn_description, dim_part_key 
+    FROM {target}
+    WHERE pn IN ('4120T01P02','4120T06P10','4953193','4954309','9238M66P11')
+""")
+print("Override PNs verification:")
+check.show(truncate=False)
+override_count = check.count()
+assert override_count == 5, f"Expected 5 override PNs, got {override_count}"
+print(f"✓ All {override_count} override PNs present in dim_part")
