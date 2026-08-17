@@ -6,7 +6,7 @@ env:
   # Postgres schema that holds the synced Gold tables (qx_ppmtx_synced_gold_*)
   - name: DB_SCHEMA
     value: 'an_maintenanceengineering_ods'
-  # Propulsion-Supervisor-Agent (Agent Bricks MAS) serving endpoint powering the
-  # Assistant chat tab. Bound with CAN_QUERY via the app.resources.serving entry.
-  - name: DATABRICKS_SERVING_ENDPOINT_NAME
-    value: 'mas-99316ed5-endpoint'
+  # Genie Space ID for the "Propulsion Reliability Intelligence" space.
+  # Queries execute under the logged-in user's OBO token for Unity Catalog access.
+  - name: DATABRICKS_GENIE_SPACE_ID
+    value: '01f1763c5f6c1b2789524816da865544'

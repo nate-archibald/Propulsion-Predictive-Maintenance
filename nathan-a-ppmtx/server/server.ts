@@ -1,5 +1,6 @@
-import { createApp, server, lakebase, serving } from "@databricks/appkit";
+import { createApp, server, lakebase, genie } from "@databricks/appkit";
 import type { Request, Response } from "express";
+import * as pg from "pg";
 import {
   MOCK_DEFECTS,
   MOCK_DEFECTS_BY_ATA,
@@ -24,6 +25,46 @@ import {
 // Postgres schema holding the reverse-ETL synced Gold tables (qx_ppmtx_synced_gold_*).
 const DB_SCHEMA = process.env.DB_SCHEMA || "an_maintenanceengineering_ods";
 const S = DB_SCHEMA;
+
+// ── User Authorization (OBO) helpers ─────────────────────────────────
+// Extract user token from request and create a user-specific Lakebase connection.
+// Falls back to null if token is missing (user authorization not enabled or not consented).
+interface UserLakebaseConnection {
+  query: (sql: string, params?: any[]) => Promise<any>;
+}
+
+async function getUserLakebaseConnection(req: Request): Promise<UserLakebaseConnection | null> {
+  const userToken = req.header("x-forwarded-access-token");
+  if (!userToken) return null;
+
+  try {
+    // Create a user-specific Postgres connection using the access token
+    const pool = new pg.Pool({
+      host: process.env.PGHOST,
+      port: parseInt(process.env.PGPORT || "5432", 10),
+      database: process.env.PGDATABASE,
+      user: process.env.PGUSER || "token",
+      password: userToken,
+      ssl: process.env.PGSSLMODE ? { rejectUnauthorized: false } : false,
+      application_name: process.env.PGAPPNAME || "nathan-a-ppmtx",
+    });
+
+    // Test the connection
+    const conn = await pool.connect();
+    conn.release();
+
+    return {
+      query: async (sql: string, params?: any[]) => {
+        const result = await pool.query(sql, params);
+        pool.end().catch(() => {});
+        return result;
+      },
+    };
+  } catch (err) {
+    console.warn(`[User Auth] Failed to create user Lakebase connection: ${err}`);
+    return null;
+  }
+}
 
 // ── Propulsion scoping ───────────────────────────────────────────────
 // This tool only shows PROPULSION (engine/APU) data. The definition mirrors the
@@ -75,82 +116,161 @@ function parseDateParam(raw: unknown): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
 
-// ── Supervisor Agent (ResponsesAgent / agent/v1/responses) helpers ────
-// The Propulsion-Supervisor-Agent MAS endpoint returns an `output[]` array whose
-// items are `message` (assistant text) or `function_call` (subagent/tool calls).
-// Reasoning text, routing markers like `<name>…</name>`, and the FINAL answer are
-// all `message` items. See docs/supervisor_agent_discovery.md.
-type AgentMsg = { role: "user" | "assistant"; content: string };
-const NAME_MARKER = /^<name>.*<\/name>$/s;
-const STATUS_TOKENS = new Set(["EMPTY", "COMPLETE", "DONE"]);
+// ── Genie REST API direct integration ────
+// Calls the Genie Conversation API directly using the user's OBO token.
+// This bypasses the AppKit genie plugin (whose method API is unverified) and uses
+// the documented REST endpoints instead.
+// Docs: https://learn.microsoft.com/en-us/azure/databricks/genie-agents/conversation-api/
+const GENIE_POLL_INTERVAL_MS = 2000;
+const GENIE_POLL_MAX_ATTEMPTS = 60; // 2 min max wait
 
-function textOf(item: any): string {
-  if (typeof item?.content === "string") return item.content;
-  if (Array.isArray(item?.content)) {
-    return item.content
-      .filter((c: any) => c?.type === "output_text" && typeof c.text === "string")
-      .map((c: any) => c.text)
-      .join("");
+async function handleGenieQuery(
+  req: Request,
+  spaceId: string,
+  userMessage: string,
+): Promise<{ reply: string; steps: string[] }> {
+  const rawHost = process.env.DATABRICKS_HOST || "";
+  const token = req.header("x-forwarded-access-token");
+  if (!rawHost) throw new Error("DATABRICKS_HOST not set");
+  if (!token) throw new Error("No user token — user not authenticated via OBO");
+
+  // Platform injects host without protocol — ensure https:// prefix for fetch()
+  const host = rawHost.startsWith("http") ? rawHost : `https://${rawHost}`;
+  const baseUrl = `${host.replace(/\/$/, "")}/api/2.0/genie/spaces/${spaceId}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+
+  // 1. Start a new conversation with the user's question
+  const startRes = await fetch(`${baseUrl}/start-conversation`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ content: userMessage }),
+  });
+  if (!startRes.ok) {
+    const errText = await startRes.text();
+    throw new Error(`Genie start-conversation failed (${startRes.status}): ${errText}`);
   }
-  return "";
+  const startData: any = await startRes.json();
+  const conversationId: string = startData.conversation_id || startData.conversation?.id;
+  const messageId: string = startData.message_id || startData.message?.id;
+  if (!conversationId || !messageId) {
+    throw new Error(`Unexpected start-conversation response: ${JSON.stringify(startData).slice(0, 500)}`);
+  }
+
+  // 2. Poll the message until a terminal status is reached.
+  // Terminal states: COMPLETED, FAILED, CANCELLED.
+  // Non-terminal (keep polling): SUBMITTED, IN_PROGRESS, ASKING_AI,
+  //   PENDING_WAREHOUSE, EXECUTING_QUERY, and any future intermediates.
+  const TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
+  const pollUrl = `${baseUrl}/conversations/${conversationId}/messages/${messageId}`;
+  let msg: any = null;
+  for (let attempt = 0; attempt < GENIE_POLL_MAX_ATTEMPTS; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, GENIE_POLL_INTERVAL_MS));
+    const pollRes = await fetch(pollUrl, { method: "GET", headers });
+    if (!pollRes.ok) {
+      const errText = await pollRes.text();
+      throw new Error(`Genie poll failed (${pollRes.status}): ${errText}`);
+    }
+    msg = await pollRes.json();
+    const status = (msg.status || "").toUpperCase();
+    if (TERMINAL_STATUSES.has(status)) {
+      break;
+    }
+  }
+
+  if (!msg) throw new Error("Genie poll returned no data");
+
+  // 3. Check for failure
+  if ((msg.status || "").toUpperCase() === "FAILED") {
+    const errMsg = msg.error?.message || JSON.stringify(msg.error) || "Unknown Genie error";
+    throw new Error(`Genie query failed: ${errMsg}`);
+  }
+
+  // 4. Extract the answer from attachments
+  // Priority: TEXT_ATTACHMENT_PURPOSE_ANSWER > query.description > any text > fallback
+  const steps: string[] = [];
+  let answerText = "";
+  let fallbackText = "";
+  let queryDescription = "";
+  const attachments: any[] = Array.isArray(msg.attachments) ? msg.attachments : [];
+
+  for (const att of attachments) {
+    // Text attachments — prefer ANSWER purpose over follow-up questions
+    if (att?.text?.content) {
+      if (att.text.purpose === "TEXT_ATTACHMENT_PURPOSE_ANSWER") {
+        answerText = att.text.content;
+      } else if (!fallbackText) {
+        fallbackText = att.text.content;
+      }
+    }
+    // Generated SQL
+    if (att?.query?.query) {
+      steps.push(`SQL: ${att.query.query}`);
+    }
+    // Query description (the "what you asked for" summary)
+    if (att?.query?.description) {
+      queryDescription = att.query.description;
+    }
+  }
+
+  const reply = answerText || queryDescription || fallbackText;
+
+  // Fallback if nothing found in attachments
+  if (!reply && msg.query_result?.row_count !== undefined) {
+    return { reply: `Query completed — returned ${msg.query_result.row_count} rows.`, steps };
+  }
+
+  return { reply: reply || "(Genie returned no answer text)", steps };
 }
 
-// Reduce a ResponsesAgent `output[]` array to { reply, steps }.
-function normalizeAgentResponse(resp: any): { reply: string; steps: string[] } {
-  const output: any[] = Array.isArray(resp?.output) ? resp.output : [];
-  const messages: string[] = [];
-  const steps: string[] = [];
-  for (const item of output) {
-    if (item?.type === "function_call") {
-      const q = (() => {
-        try {
-          const a = JSON.parse(item.arguments ?? "{}");
-          return a.genie_query || a.query || item.arguments;
-        } catch {
-          return item.arguments;
-        }
-      })();
-      steps.push(`Queried \`${item.name}\`: ${q}`);
-      continue;
-    }
-    if (item?.type === "message") {
-      const t = textOf(item).trim();
-      if (!t) continue;
-      if (NAME_MARKER.test(t) || STATUS_TOKENS.has(t.toUpperCase())) {
-        continue; // routing marker / status token — trace only
-      }
-      messages.push(t);
-    }
+// Execute a SQL query using user authorization (if available) or fall back to app authorization.
+async function executeQuery(
+  req: Request,
+  appkit: any,
+  sql: string,
+  params?: any[]
+): Promise<any> {
+  const userConn = await getUserLakebaseConnection(req);
+  if (userConn) {
+    return userConn.query(sql, params || []);
   }
-  // Final answer = last substantive assistant message; earlier ones are reasoning.
-  const reply = messages.length ? messages[messages.length - 1] : "";
-  if (messages.length > 1) steps.push(...messages.slice(0, -1));
-  return { reply: reply || "(The assistant returned no answer.)", steps };
+  // Fall back to app-level Lakebase (service principal)
+  return appkit.lakebase.query(sql, params);
 }
 
 await createApp({
-  plugins: [server(), lakebase(), serving()],
+  plugins: [server(), lakebase(), genie()],
   async onPluginsReady(appkit) {
     // NOTE: the synced tables are created/populated by the reverse-ETL pipeline,
     // so there is NO DDL or seed step here — the app is read-only over them.
     appkit.server.extend((app) => {
       // ── Health ───────────────────────────────────────────────────────
-      app.get("/api/health/lakebase", async (_req: Request, res: Response) => {
+      app.get("/api/health/lakebase", async (req: Request, res: Response) => {
         try {
-          await appkit.lakebase.query("SELECT 1");
-          res.json({ connected: true, mode: "autoscaling", schema: S });
+          const userConn = await getUserLakebaseConnection(req);
+          if (userConn) {
+            await userConn.query("SELECT 1");
+            res.json({ connected: true, mode: "autoscaling", schema: S, auth: "user" });
+          } else {
+            await executeQuery(req, appkit, "SELECT 1");
+            res.json({ connected: true, mode: "autoscaling", schema: S, auth: "app" });
+          }
         } catch (err) {
           res.json({ connected: false, mode: "autoscaling", schema: S, error: String(err) });
         }
       });
 
       // ── Diagnostic endpoint for schema inspection ─────────────────────
-      app.get("/api/debug/schema-inspection", async (_req: Request, res: Response) => {
+      app.get("/api/debug/schema-inspection", async (req: Request, res: Response) => {
         const diagnostics: any = {};
 
         // 1. List tables
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT table_name FROM information_schema.tables WHERE table_schema = $1 ORDER BY table_name`,
             [S]
           );
@@ -161,7 +281,9 @@ await createApp({
 
         // 2. Inventory control columns
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT column_name, data_type FROM information_schema.columns 
              WHERE table_schema = $1 AND table_name LIKE '%inventory_control%' 
              ORDER BY table_name, ordinal_position`,
@@ -174,7 +296,9 @@ await createApp({
 
         // 3. Inventory snapshot columns
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT column_name, data_type FROM information_schema.columns 
              WHERE table_schema = $1 AND table_name LIKE '%inventory_snapshot%' 
              ORDER BY table_name, ordinal_position`,
@@ -187,7 +311,9 @@ await createApp({
 
         // 4. Distinct control values
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT DISTINCT control FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ORDER BY control LIMIT 50`
           );
           diagnostics.control_values = result.rows.map((r: any) => r.control);
@@ -197,7 +323,9 @@ await createApp({
 
         // 5. Sample inventory snapshot rows
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT sn, installed_ac, installed_position FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot 
              WHERE installed_ac IS NOT NULL LIMIT 5`
           );
@@ -208,7 +336,9 @@ await createApp({
 
         // 6. Engine part numbers
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT DISTINCT pn, pn_description FROM ${S}.qx_ppmtx_synced_gold_dim_part 
              WHERE pn ILIKE '%CF34%' OR pn_description ILIKE '%CF34%' LIMIT 20`
           );
@@ -219,7 +349,9 @@ await createApp({
 
         // 7. Check TSN count
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT COUNT(*) as count FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control WHERE control = 'TSN'`
           );
           diagnostics.tsn_row_count = result.rows[0]?.count;
@@ -234,7 +366,9 @@ await createApp({
       app.get("/api/defects", async (req: Request, res: Response) => {
         const limit = clampLimit(req.query.limit, 300, 2000);
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT f.fact_defect_key, f.defect_type, f.defect, f.defect_item,
                     a.ac AS tail,
                     LPAD(c.chapter::text, 2, '0') || '-' || LPAD(c.section::text, 2, '0') AS ata,
@@ -264,7 +398,9 @@ await createApp({
         const from = parseDateParam(req.query.from);
         const to = parseDateParam(req.query.to);
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT LPAD(c.chapter::text, 2, '0') || '-' || LPAD(c.section::text, 2, '0') AS ata,
                     MAX(c.chapter_description) AS description,
                     COUNT(*)::int AS count,
@@ -292,7 +428,9 @@ await createApp({
       app.get("/api/defects/weekly-trend", async (req: Request, res: Response) => {
         const weeks = clampLimit(req.query.weeks, 12, 104);
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT d.year, d.week_of_year AS week, COUNT(*)::int AS count
              FROM ${S}.qx_ppmtx_synced_gold_fact_defect f
              JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON f.reported_date_key = d.dim_date_key
@@ -316,7 +454,9 @@ await createApp({
       app.get("/api/parts", async (req: Request, res: Response) => {
         const limit = clampLimit(req.query.limit, 300, 2000);
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT ic.pn, ic.sn, p.pn_description AS description,
                     ic.control, ic.actual_hours, ic.actual_cycles,
                     ic.schedule_cycles, ic.remaining_cycles
@@ -338,7 +478,9 @@ await createApp({
       app.get("/api/spares", async (req: Request, res: Response) => {
         const limit = clampLimit(req.query.limit, 500, 5000);
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT p.pn AS part_number, MAX(p.pn_description) AS description,
                     s.station_code AS station, sn.condition,
                     COUNT(*)::int AS quantity
@@ -362,7 +504,9 @@ await createApp({
       app.get("/api/engines", async (req: Request, res: Response) => {
         const limit = clampLimit(req.query.limit, 200, 2000);
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `WITH engine_tsn AS (
               SELECT 
                 ic.sn AS engine_sn,
@@ -416,7 +560,9 @@ await createApp({
       app.get("/api/apus", async (req: Request, res: Response) => {
         const limit = clampLimit(req.query.limit, 200, 2000);
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `WITH apu_tsn AS (
               SELECT 
                 ic.sn AS apu_sn,
@@ -464,7 +610,9 @@ await createApp({
         const parentSn = req.params.sn;
         try {
           // Level 1: direct children of the engine/APU
-          const level1 = await appkit.lakebase.query(
+          const level1 = await executeQuery(
+            req,
+            appkit,
             `SELECT s.sn, p.pn, p.pn_description AS description,
                     s.condition, s.installed_position AS position,
                     s.nha_sn, s.nha_pn
@@ -480,7 +628,9 @@ await createApp({
 
           let level2Rows: any[] = [];
           if (level1Sns.length > 0) {
-            const level2Result = await appkit.lakebase.query(
+            const level2Result = await executeQuery(
+              req,
+              appkit,
               `SELECT s.sn, p.pn, p.pn_description AS description,
                       s.condition, s.installed_position AS position,
                       s.nha_sn, s.nha_pn
@@ -524,9 +674,11 @@ await createApp({
       });
 
       // ── Fleet Leaders (highest-time engine and APU currently in service) ─────────────────────
-      app.get("/api/fleet-leaders", async (_req: Request, res: Response) => {
+      app.get("/api/fleet-leaders", async (req: Request, res: Response) => {
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `WITH engine_leader AS (
               SELECT 
                 ic.sn, snap.installed_ac AS tail,
@@ -600,7 +752,9 @@ await createApp({
           // Spares are whole engines/APUs that are:
           // 1. Not currently installed (installed_ac IS NULL)
           // 2. Not on an active RO (order_type='RO' AND status='OPEN')
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `WITH spare_candidates AS (
                SELECT DISTINCT fs.sn
                FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot fs
@@ -646,7 +800,9 @@ await createApp({
         
         try {
           // Show all transactions for these SNs with extended diagnostics
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT 
                p.pn,
                t.sn,
@@ -706,7 +862,7 @@ await createApp({
       });
 
       // ── Critical Spares (for Spare Quick View widget) ──────────────────────────────
-      app.get("/api/critical-spares", async (_req: Request, res: Response) => {
+      app.get("/api/critical-spares", async (req: Request, res: Response) => {
         // Part mapping: part name → array of PNs for that part
         const partMap: Record<string, string[]> = {
           "FADEC": ["4120T00P60", "4120T00P63"],
@@ -743,7 +899,9 @@ await createApp({
 
           // Query: count parts that are NOT installed and have spare condition codes
           // Using snapshot table for current state (not transaction history)
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT p.pn, COUNT(DISTINCT s.sn)::int AS spare_count
              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
@@ -801,7 +959,9 @@ await createApp({
         }
         
         try {
-          const result = await appkit.lakebase.query(
+          const result = await executeQuery(
+            req,
+            appkit,
             `SELECT 
                fs.sn, 
                p.pn,
@@ -829,7 +989,9 @@ await createApp({
         // Null bound => that side is unconstrained (all-time).
         const inRange = `($1::date IS NULL OR d.calendar_date >= $1::date) AND ($2::date IS NULL OR d.calendar_date <= $2::date)`;
         try {
-          const defectAgg = await appkit.lakebase.query(
+          const defectAgg = await executeQuery(
+            req,
+            appkit,
             `SELECT COUNT(*) FILTER (WHERE f.status = 'OPEN')::int AS active_defects,
                     COUNT(*) FILTER (WHERE f.cancellation IS NOT NULL AND ${inRange})::int AS cancel_count,
                     COALESCE(SUM(f.delay_minutes) FILTER (WHERE ${inRange}), 0)::int AS total_delay_minutes,
@@ -851,7 +1013,9 @@ await createApp({
              WHERE c.chapter IN (${PROP_ATA_LIST})`,
             [from, to],
           );
-          const llpAgg = await appkit.lakebase.query(
+          const llpAgg = await executeQuery(
+            req,
+            appkit,
             `SELECT COUNT(*)::int AS llp_alerts
              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control
              WHERE control = 'LL' AND remaining_cycles IS NOT NULL AND remaining_cycles < 1000
@@ -877,32 +1041,34 @@ await createApp({
         }
       });
 
-      // ── Supervisor Agent chat ────────────────────────────────────────
-      // Proxies the Assistant tab to the Propulsion-Supervisor-Agent MAS endpoint
-      // (alias `default` → DATABRICKS_SERVING_ENDPOINT_NAME). Normalizes the
-      // ResponsesAgent output to { reply, steps } and never 500s to the UI.
+      // ── Genie AI query handler ─────────────────────────────────────
+      // Proxies the Assistant tab to the Genie "Propulsion Reliability Intelligence" space.
+      // Executes under the OBO token (logged-in user), granting Unity Catalog access.
+      // Returns { reply, steps, source } where:
+      //  - reply: final Genie answer text
+      //  - steps: any generated SQL or intermediate reasoning
+      //  - source: "live" on success, "mock" on fallback
       app.post("/api/agent", async (req: Request, res: Response) => {
-        const history: AgentMsg[] = Array.isArray(req.body?.messages) ? req.body.messages : [];
-        const input = history
-          .filter((m) => m && typeof m.content === "string" && m.content.trim())
-          .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content }));
-        if (input.length === 0) {
+        const history: any[] = Array.isArray(req.body?.messages) ? req.body.messages : [];
+        const userMessage = history
+          .filter((m: any) => m && m.role === "user" && typeof m.content === "string" && m.content.trim())
+          .pop()?.content || "";
+        
+        if (!userMessage.trim()) {
           res.status(400).json({ reply: "No message provided.", steps: [], source: "mock" });
           return;
         }
+
         try {
-          const result: any = await appkit.serving().asUser(req).invoke({ input });
-          // `invoke()` returns an ExecutionResult. A failed call resolves (does not
-          // throw) with { ok:false, status, message } — treat that as a fallback.
-          if (result && result.ok === false) {
-            throw new Error(`serving invoke failed (${result.status}): ${result.message}`);
+          const spaceId = process.env.DATABRICKS_GENIE_SPACE_ID;
+          if (!spaceId) {
+            throw new Error("DATABRICKS_GENIE_SPACE_ID not configured");
           }
-          // The endpoint payload is the ExecutionResult's `.data` (else the result itself).
-          const payload = result && result.data !== undefined ? result.data : result;
-          const { reply, steps } = normalizeAgentResponse(payload);
+
+          const { reply, steps } = await handleGenieQuery(req, spaceId, userMessage);
           res.json({ reply, steps, source: "live" });
-        } catch (err) {
-          console.warn(`[Serving] /api/agent fallback: ${err}`);
+        } catch (err: any) {
+          console.warn(`[Genie] /api/agent fallback: ${err}`);
           res.json({
             reply:
               "The Propulsion Assistant is unavailable right now. Please try again in a moment.",
@@ -913,11 +1079,10 @@ await createApp({
       });
 
       // ── Agent health ─────────────────────────────────────────────────
-      // Lightweight: reports whether the serving endpoint is configured. We do NOT
-      // invoke the MAS here — it is slow and billable; the chat path itself reports
-      // live/mock per request.
+      // Lightweight: reports whether the Genie space is configured. We do NOT
+      // invoke Genie here — it is billable; the chat path itself reports live/mock per request.
       app.get("/api/health/agent", (req: Request, res: Response) => {
-        const endpoint = process.env.DATABRICKS_SERVING_ENDPOINT_NAME || "";
+        const spaceId = process.env.DATABRICKS_GENIE_SPACE_ID || "";
         // OBO diagnostics: report only PRESENCE of forwarded headers (never values)
         // so we can confirm the Apps proxy is injecting the user token in-browser.
         const tok = req.header("x-forwarded-access-token") || "";
@@ -949,7 +1114,7 @@ await createApp({
           scopes,
           claims,
         };
-        res.json({ connected: Boolean(endpoint), endpoint, obo });
+        res.json({ connected: Boolean(spaceId), spaceId, obo });
       });
     });
   },

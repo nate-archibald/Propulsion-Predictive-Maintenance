@@ -17,17 +17,18 @@ resources:
             branch: "projects/nathan-a-ppmtx/branches/production"
             database: "projects/nathan-a-ppmtx/branches/production/databases/databricks-postgres"
             permission: "CAN_CONNECT_AND_CREATE"
-        # Binds the app SP to the Propulsion-Supervisor-Agent (Agent Bricks MAS)
-        # serving endpoint with CAN_QUERY so the Assistant chat tab can invoke it.
-        - name: "serving"
-          serving_endpoint:
-            name: "mas-99316ed5-endpoint"
-            permission: "CAN_QUERY"
-      # On-behalf-of-user API scopes. The Assistant tab invokes the
-      # Propulsion-Supervisor-Agent MAS, whose Genie subagent must run as the
-      # signed-in user (who holds Genie/warehouse/UC access) rather than the app SP.
+        # Genie space binding: grants app SP CAN_RUN permission as a safety net.
+        # Queries always execute as the logged-in user (via .asUser(req) in handleGenieQuery),
+        # but this resource binding ensures the app SP has permission if needed for fallback.
+        - name: "genie-space"
+          genie_space:
+            name: "Propulsion Reliability Intelligence"
+            space_id: "01f1763c5f6c1b2789524816da865544"
+            permission: "CAN_RUN"
+      # On-behalf-of-user API scopes. The Assistant tab invokes Genie, which must
+      # run as the signed-in user (who holds Genie/warehouse/UC access) rather than
+      # the app SP.
       user_api_scopes:
-        - serving.serving-endpoints
         - genie
         - sql
 
