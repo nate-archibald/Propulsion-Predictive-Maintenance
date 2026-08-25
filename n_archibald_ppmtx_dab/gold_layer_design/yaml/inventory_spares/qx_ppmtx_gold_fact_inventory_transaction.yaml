@@ -82,12 +82,12 @@ columns:
   - name: transaction_date_key
     data_type: INT
     nullable: true
-    description: "Foreign key to date dimension for transaction date. Business: when this inventory movement occurred. Technical: derived from processed_timestamp."
+    description: "Foreign key to date dimension for transaction date. Business: when this inventory movement occurred. Technical: derived from modified_date."
     lineage:
       source_table: qx_ppmtx_pn_inventory_history
-      silver_column: processed_timestamp
+      silver_column: modified_date
       transformation: DERIVED_CALCULATION
-      transformation_logic: "CAST(date_format(CAST(processed_timestamp AS DATE), 'yyyyMMdd') AS INT)"
+      transformation_logic: "CAST(date_format(CAST(modified_date AS DATE), 'yyyyMMdd') AS INT)"
 
   - name: transaction_no
     data_type: DECIMAL

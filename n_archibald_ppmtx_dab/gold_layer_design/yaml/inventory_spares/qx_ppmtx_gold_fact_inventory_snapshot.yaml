@@ -82,12 +82,12 @@ columns:
   - name: snapshot_date_key
     data_type: INT
     nullable: true
-    description: "Foreign key to date dimension for snapshot date. Business: the date this inventory position was captured. Technical: derived from processed_timestamp."
+    description: "Foreign key to date dimension for snapshot date. Business: the date this inventory position was captured. Technical: derived from modified_date."
     lineage:
       source_table: qx_ppmtx_pn_inventory_detail
-      silver_column: processed_timestamp
+      silver_column: modified_date
       transformation: DERIVED_CALCULATION
-      transformation_logic: "CAST(date_format(CAST(processed_timestamp AS DATE), 'yyyyMMdd') AS INT)"
+      transformation_logic: "CAST(date_format(CAST(modified_date AS DATE), 'yyyyMMdd') AS INT)"
 
   - name: batch
     data_type: DECIMAL

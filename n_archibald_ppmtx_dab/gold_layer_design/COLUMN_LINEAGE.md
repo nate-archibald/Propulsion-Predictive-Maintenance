@@ -152,7 +152,7 @@
 | dim_part_key | .pn | LOOKUP | JOIN dim_part |
 | dim_aircraft_key | .ac | LOOKUP | JOIN dim_aircraft |
 | dim_station_key | .location | LOOKUP | JOIN dim_station |
-| transaction_date_key | .processed_timestamp | DERIVED_CALCULATION | date to INT key |
+| transaction_date_key | .modified_date | DERIVED_CALCULATION | date to INT key |
 | transaction_no | .transaction_no | DIRECT_COPY | — |
 | batch | .batch | DIRECT_COPY | — |
 | transaction_type | .transaction_type | DIRECT_COPY | — |
@@ -171,7 +171,7 @@
 | dim_part_key | .pn | LOOKUP | JOIN dim_part |
 | dim_aircraft_key | .installed_ac | LOOKUP | JOIN dim_aircraft |
 | dim_station_key | .location | LOOKUP | JOIN dim_station |
-| snapshot_date_key | .processed_timestamp | DERIVED_CALCULATION | date to INT key |
+| snapshot_date_key | .modified_date | DERIVED_CALCULATION | date to INT key |
 | batch | .batch | DIRECT_COPY | — |
 | sn | .sn | DIRECT_COPY | — |
 | nha_pn | .nha_pn | DIRECT_COPY | — |
@@ -212,7 +212,7 @@
 |---|---|---|---|
 | fact_order_key | .order_number | GENERATED | HASH(order_type, order_number, order_line) |
 | dim_part_key | .pn | LOOKUP | JOIN dim_part |
-| order_date_key | .processed_timestamp | DERIVED_CALCULATION | date to INT key |
+| order_date_key | .modified_date | DERIVED_CALCULATION | date to INT key |
 | order_type | .order_type | DIRECT_COPY | — |
 | order_number | .order_number | DIRECT_COPY | — |
 | order_line | .order_line | DIRECT_COPY | — |

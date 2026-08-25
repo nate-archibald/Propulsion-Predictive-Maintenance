@@ -103,7 +103,7 @@ def merge_dim_part():
     # Read and deduplicate Silver
     silver_df = (
         spark.table(source_table)
-        .orderBy(col("processed_timestamp").desc())
+        .orderBy(col("modified_date").desc())
         .dropDuplicates(["pn"])
     )
 
@@ -406,7 +406,7 @@ def merge_fact_component_removal():
     # Read and deduplicate Silver
     silver_df = (
         spark.table(source_table)
-        .orderBy(col("processed_timestamp").desc())
+        .orderBy(col("modified_date").desc())
         .dropDuplicates(["transaction", "transaction_item"])
     )
 
@@ -503,7 +503,7 @@ def merge_fact_defect():
     # Read and deduplicate Silver
     silver_df = (
         spark.table(source_table)
-        .orderBy(col("processed_timestamp").desc())
+        .orderBy(col("modified_date").desc())
         .dropDuplicates(["defect_type", "defect", "defect_item"])
     )
 
@@ -601,7 +601,7 @@ def merge_bridge_defect_part():
     # Read and deduplicate Silver
     silver_df = (
         spark.table(source_table)
-        .orderBy(col("processed_timestamp").desc())
+        .orderBy(col("modified_date").desc())
         .dropDuplicates(["defect_type", "defect", "defect_item", "item"])
     )
 
@@ -671,7 +671,7 @@ def merge_fact_inventory_transaction():
     # Read and deduplicate Silver
     silver_df = (
         spark.table(source_table)
-        .orderBy(col("processed_timestamp").desc())
+        .orderBy(col("modified_date").desc())
         .dropDuplicates(["transaction_no", "batch"])
     )
 
@@ -693,8 +693,8 @@ def merge_fact_inventory_transaction():
         .withColumn(
             "transaction_date_key",
             F.when(
-                silver_df["processed_timestamp"].isNotNull(),
-                F.date_format(silver_df["processed_timestamp"].cast("date"), "yyyyMMdd").cast("int")
+                silver_df["modified_date"].isNotNull(),
+                F.date_format(silver_df["modified_date"].cast("date"), "yyyyMMdd").cast("int")
             )
         )
         .select(
@@ -748,7 +748,7 @@ def merge_fact_inventory_snapshot():
     # Read and deduplicate Silver (one row per batch)
     silver_df = (
         spark.table(source_table)
-        .orderBy(col("processed_timestamp").desc())
+        .orderBy(col("modified_date").desc())
         .dropDuplicates(["batch"])
     )
 
@@ -770,8 +770,8 @@ def merge_fact_inventory_snapshot():
         .withColumn(
             "snapshot_date_key",
             F.when(
-                silver_df["processed_timestamp"].isNotNull(),
-                F.date_format(silver_df["processed_timestamp"].cast("date"), "yyyyMMdd").cast("int")
+                silver_df["modified_date"].isNotNull(),
+                F.date_format(silver_df["modified_date"].cast("date"), "yyyyMMdd").cast("int")
             )
         )
         .select(
@@ -815,7 +815,7 @@ def merge_fact_inventory_control():
     # Read and deduplicate Silver
     silver_df = (
         spark.table(source_table)
-        .orderBy(col("processed_timestamp").desc())
+        .orderBy(col("modified_date").desc())
         .dropDuplicates(["pn", "sn", "control"])
     )
 
@@ -900,7 +900,7 @@ def merge_fact_order():
     # Read and deduplicate Silver
     silver_df = (
         spark.table(source_table)
-        .orderBy(col("processed_timestamp").desc())
+        .orderBy(col("modified_date").desc())
         .dropDuplicates(["order_type", "order_number", "order_line"])
     )
 
@@ -922,8 +922,8 @@ def merge_fact_order():
         .withColumn(
             "order_date_key",
             F.when(
-                silver_df["processed_timestamp"].isNotNull(),
-                F.date_format(silver_df["processed_timestamp"].cast("date"), "yyyyMMdd").cast("int")
+                silver_df["modified_date"].isNotNull(),
+                F.date_format(silver_df["modified_date"].cast("date"), "yyyyMMdd").cast("int")
             )
         )
         .select(
@@ -979,7 +979,7 @@ def merge_fact_teardown():
     # Read and deduplicate Silver
     silver_df = (
         spark.table(source_table)
-        .orderBy(col("processed_timestamp").desc())
+        .orderBy(col("modified_date").desc())
         .dropDuplicates(["order_type", "order_number", "order_line"])
     )
 

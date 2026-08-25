@@ -40,7 +40,7 @@ def qx_ppmtx_dq_record_counts():
     ]
 
     union_sql = " UNION ALL ".join([
-        f"SELECT '{tbl}' AS table_name, COUNT(*) AS record_count, MAX(processed_timestamp) AS last_processed FROM LIVE.{tbl}"
+        f"SELECT '{tbl}' AS table_name, COUNT(*) AS record_count, MAX(modified_date) AS last_processed FROM LIVE.{tbl}"
         for tbl in tables
     ])
 
@@ -71,7 +71,6 @@ def qx_ppmtx_dq_orphaned_inventory():
             inv.pn,
             inv.sn,
             inv.condition,
-            inv.processed_timestamp,
             'Missing in pn_master' AS integrity_issue
         FROM LIVE.qx_ppmtx_pn_inventory_detail AS inv
         LEFT JOIN LIVE.qx_ppmtx_pn_master AS pm ON inv.pn = pm.pn
@@ -103,7 +102,6 @@ def qx_ppmtx_dq_orphaned_defect_pn():
             drp.defect,
             drp.defect_item,
             drp.pn,
-            drp.processed_timestamp,
             'Missing in pn_master' AS integrity_issue
         FROM LIVE.qx_ppmtx_defect_report_pn AS drp
         LEFT JOIN LIVE.qx_ppmtx_pn_master AS pm ON drp.pn = pm.pn
