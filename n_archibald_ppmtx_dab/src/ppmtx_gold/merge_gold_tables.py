@@ -159,10 +159,41 @@ def merge_dim_part():
     # Only include override PNs not already in pn_master
     silver_pns = primary_df.select("pn")
     overrides_new = overrides_df.join(silver_pns, on="pn", how="left_anti")
-    print(f" Override PNs added: {overrides_new.count()}")
+    print(f"  Override PNs added: {overrides_new.count()}")
 
-    # Combine primary + fallback sources
-    gold_df = primary_df.unionByName(overrides_new)
+    # Include any PNs from inventory_detail not in pn_master or overrides.
+    # These are parts installed on engines/APUs whose PN master data hasn't been
+    # populated yet. Without a dim_part row their fact snapshot rows get
+    # dim_part_key = NULL, and the INNER JOIN in the app query silently drops them.
+    inventory_source = get_silver_table("qx_ppmtx_pn_inventory_detail")
+    known_pns = primary_df.select("pn").union(overrides_df.select("pn"))
+    orphaned_df = (
+        spark.table(inventory_source)
+        .select("pn")
+        .distinct()
+        .join(known_pns, on="pn", how="left_anti")
+        .filter(col("pn").isNotNull())
+        .withColumn("dim_part_key", F.xxhash64(col("pn")))
+        .withColumn("pn_description", lit(None).cast("string"))
+        .withColumn("category", lit(None).cast("string"))
+        .withColumn("sub_category", lit(None).cast("string"))
+        .withColumn("expenditure", lit(None).cast("string"))
+        .withColumn("stock_uom", lit(None).cast("string"))
+        .withColumn("shelf_life_flag", lit(None).cast("string"))
+        .withColumn("shelf_life_days", lit(None).cast("decimal(10,2)"))
+        .withColumn("tool_calibration_flag", lit(None).cast("string"))
+        .withColumn("tool_life_days", lit(None).cast("decimal(10,2)"))
+        .withColumn("ri_flag", lit(None).cast("string"))
+        .withColumn("pn_supersede", lit(None).cast("string"))
+        .withColumn("standard_cost", lit(None).cast("decimal(10,2)"))
+        .withColumn("average_cost", lit(None).cast("decimal(10,2)"))
+        .withColumn("gl_company", lit(None).cast("string"))
+        .withColumn("gl_expenditure", lit(None).cast("string"))
+    )
+    print(f"  Orphaned inventory PNs added: {orphaned_df.count()}")
+
+    # Combine primary + overrides + orphaned inventory PNs
+    gold_df = primary_df.unionByName(overrides_new).unionByName(orphaned_df)
 
     # SCD Type 1 MERGE
     gold_df.createOrReplaceTempView("source_dim_part")
