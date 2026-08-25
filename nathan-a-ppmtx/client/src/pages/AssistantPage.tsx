@@ -108,8 +108,8 @@ export default function AssistantPage() {
             Propulsion Assistant
           </h2>
           <p className="text-muted-foreground mt-1">
-            Ask questions about propulsion defects, parts, and reliability — powered by the
-            Propulsion-Supervisor-Agent.
+            Ask questions about propulsion defects, parts, and reliability — powered by
+            Propulsion Reliability Intelligence.
           </p>
         </div>
       </div>
