@@ -1,4 +1,4 @@
-import { createApp, server, lakebase, genie } from "@databricks/appkit";
+﻿import { createApp, server, lakebase, genie } from "@databricks/appkit";
 import type { Request, Response } from "express";
 import * as pg from "pg";
 import {
@@ -117,24 +117,40 @@ function parseDateParam(raw: unknown): string | null {
 }
 
 // ── Genie REST API direct integration ────
-// Calls the Genie Conversation API directly using the user's OBO token.
-// This bypasses the AppKit genie plugin (whose method API is unverified) and uses
-// the documented REST endpoints instead.
-// Docs: https://learn.microsoft.com/en-us/azure/databricks/genie-agents/conversation-api/
+// Supports stateful multi-turn conversations (follow-up questions retain full context),
+// tabular query result fetching, and visualization image download.
+// Docs: https://docs.databricks.com/aws/en/genie-agents/conversation-api
 const GENIE_POLL_INTERVAL_MS = 2000;
 const GENIE_POLL_MAX_ATTEMPTS = 60; // 2 min max wait
+
+export interface GenieQueryResult {
+  columns: string[];
+  rows: string[][];
+  title?: string;
+}
+
+export interface GenieVisualization {
+  title: string;
+  dataUrl: string;
+}
 
 async function handleGenieQuery(
   req: Request,
   spaceId: string,
   userMessage: string,
-): Promise<{ reply: string; steps: string[] }> {
+  existingConversationId?: string,
+): Promise<{
+  reply: string;
+  steps: string[];
+  conversationId: string;
+  queryResults?: GenieQueryResult[];
+  visualizations?: GenieVisualization[];
+}> {
   const rawHost = process.env.DATABRICKS_HOST || "";
   const token = req.header("x-forwarded-access-token");
   if (!rawHost) throw new Error("DATABRICKS_HOST not set");
   if (!token) throw new Error("No user token — user not authenticated via OBO");
 
-  // Platform injects host without protocol — ensure https:// prefix for fetch()
   const host = rawHost.startsWith("http") ? rawHost : `https://${rawHost}`;
   const baseUrl = `${host.replace(/\/$/, "")}/api/2.0/genie/spaces/${spaceId}`;
   const headers: Record<string, string> = {
@@ -142,27 +158,48 @@ async function handleGenieQuery(
     "Content-Type": "application/json",
   };
 
-  // 1. Start a new conversation with the user's question
-  const startRes = await fetch(`${baseUrl}/start-conversation`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ content: userMessage }),
-  });
-  if (!startRes.ok) {
-    const errText = await startRes.text();
-    throw new Error(`Genie start-conversation failed (${startRes.status}): ${errText}`);
-  }
-  const startData: any = await startRes.json();
-  const conversationId: string = startData.conversation_id || startData.conversation?.id;
-  const messageId: string = startData.message_id || startData.message?.id;
-  if (!conversationId || !messageId) {
-    throw new Error(`Unexpected start-conversation response: ${JSON.stringify(startData).slice(0, 500)}`);
+  // 1. Start a new conversation OR send a follow-up message in the existing one
+  let conversationId: string;
+  let messageId: string;
+
+  if (existingConversationId) {
+    // Follow-up: Genie retains full conversation context automatically
+    const followRes = await fetch(
+      `${baseUrl}/conversations/${existingConversationId}/messages`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ content: userMessage, enable_visualization: true }),
+      },
+    );
+    if (!followRes.ok) {
+      const errText = await followRes.text();
+      throw new Error(`Genie create-message failed (${followRes.status}): ${errText}`);
+    }
+    const followData: any = await followRes.json();
+    conversationId = existingConversationId;
+    messageId = followData.id || followData.message_id || followData.message?.id;
+  } else {
+    // New conversation
+    const startRes = await fetch(`${baseUrl}/start-conversation`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ content: userMessage, enable_visualization: true }),
+    });
+    if (!startRes.ok) {
+      const errText = await startRes.text();
+      throw new Error(`Genie start-conversation failed (${startRes.status}): ${errText}`);
+    }
+    const startData: any = await startRes.json();
+    conversationId = startData.conversation_id || startData.conversation?.id;
+    messageId = startData.message_id || startData.message?.id;
   }
 
-  // 2. Poll the message until a terminal status is reached.
-  // Terminal states: COMPLETED, FAILED, CANCELLED.
-  // Non-terminal (keep polling): SUBMITTED, IN_PROGRESS, ASKING_AI,
-  //   PENDING_WAREHOUSE, EXECUTING_QUERY, and any future intermediates.
+  if (!conversationId || !messageId) {
+    throw new Error("Genie response missing conversation_id or message_id");
+  }
+
+  // 2. Poll until terminal status (COMPLETED / FAILED / CANCELLED)
   const TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
   const pollUrl = `${baseUrl}/conversations/${conversationId}/messages/${messageId}`;
   let msg: any = null;
@@ -174,30 +211,24 @@ async function handleGenieQuery(
       throw new Error(`Genie poll failed (${pollRes.status}): ${errText}`);
     }
     msg = await pollRes.json();
-    const status = (msg.status || "").toUpperCase();
-    if (TERMINAL_STATUSES.has(status)) {
-      break;
-    }
+    if (TERMINAL_STATUSES.has((msg.status || "").toUpperCase())) break;
   }
 
   if (!msg) throw new Error("Genie poll returned no data");
-
-  // 3. Check for failure
   if ((msg.status || "").toUpperCase() === "FAILED") {
-    const errMsg = msg.error?.message || JSON.stringify(msg.error) || "Unknown Genie error";
-    throw new Error(`Genie query failed: ${errMsg}`);
+    throw new Error(`Genie query failed: ${msg.error?.message || JSON.stringify(msg.error)}`);
   }
 
-  // 4. Extract the answer from attachments
-  // Priority: TEXT_ATTACHMENT_PURPOSE_ANSWER > query.description > any text > fallback
+  // 3. Extract answer text, SQL steps, and attachment IDs for results/visualizations
   const steps: string[] = [];
   let answerText = "";
   let fallbackText = "";
   let queryDescription = "";
   const attachments: any[] = Array.isArray(msg.attachments) ? msg.attachments : [];
+  const queryAttachmentIds: Array<{ id: string; title?: string }> = [];
+  const vizAttachmentIds: Array<{ id: string; title: string }> = [];
 
   for (const att of attachments) {
-    // Text attachments — prefer ANSWER purpose over follow-up questions
     if (att?.text?.content) {
       if (att.text.purpose === "TEXT_ATTACHMENT_PURPOSE_ANSWER") {
         answerText = att.text.content;
@@ -205,26 +236,65 @@ async function handleGenieQuery(
         fallbackText = att.text.content;
       }
     }
-    // Generated SQL
-    if (att?.query?.query) {
-      steps.push(`SQL: ${att.query.query}`);
+    if (att?.query?.query) steps.push(`SQL: ${att.query.query}`);
+    if (att?.query?.description) queryDescription = att.query.description;
+    if (att?.attachment_id && att?.query) {
+      queryAttachmentIds.push({ id: att.attachment_id, title: att.query.title });
     }
-    // Query description (the "what you asked for" summary)
-    if (att?.query?.description) {
-      queryDescription = att.query.description;
+    if (att?.attachment_id && att?.viz) {
+      vizAttachmentIds.push({ id: att.attachment_id, title: att.viz.title || "Chart" });
+    }
+  }
+
+  // 4. Fetch tabular results for each query attachment
+  const queryResults: GenieQueryResult[] = [];
+  for (const qatt of queryAttachmentIds) {
+    try {
+      const resultUrl = `${baseUrl}/conversations/${conversationId}/messages/${messageId}/attachments/${qatt.id}/query-result`;
+      const resultRes = await fetch(resultUrl, { method: "GET", headers });
+      if (resultRes.ok) {
+        const rd: any = await resultRes.json();
+        const columns: string[] =
+          rd?.statement_response?.manifest?.schema?.columns?.map((c: any) => c.name) ?? [];
+        const rows: string[][] = rd?.statement_response?.result?.data_array ?? [];
+        if (columns.length > 0) queryResults.push({ columns, rows, title: qatt.title });
+      }
+    } catch (e) {
+      console.warn(`[Genie] query-result fetch failed for ${qatt.id}: ${e}`);
+    }
+  }
+
+  // 5. Download visualization images as base64 data URLs
+  const visualizations: GenieVisualization[] = [];
+  for (const vatt of vizAttachmentIds) {
+    try {
+      const vizUrl = `${baseUrl}/conversations/${conversationId}/messages/${messageId}/attachments/${vatt.id}/download-visualization`;
+      const vizRes = await fetch(vizUrl, { method: "GET", headers: { Authorization: `Bearer ${token}` } });
+      if (vizRes.ok) {
+        const buf = await vizRes.arrayBuffer();
+        const ct = vizRes.headers.get("content-type") || "image/png";
+        visualizations.push({
+          title: vatt.title,
+          dataUrl: `data:${ct};base64,${Buffer.from(buf).toString("base64")}`,
+        });
+      }
+    } catch (e) {
+      console.warn(`[Genie] visualization download failed for ${vatt.id}: ${e}`);
     }
   }
 
   const reply = answerText || queryDescription || fallbackText;
-
-  // Fallback if nothing found in attachments
   if (!reply && msg.query_result?.row_count !== undefined) {
-    return { reply: `Query completed — returned ${msg.query_result.row_count} rows.`, steps };
+    return { reply: `Query returned ${msg.query_result.row_count} rows.`, steps, conversationId, queryResults: queryResults.length ? queryResults : undefined };
   }
-
-  return { reply: reply || "(Genie returned no answer text)", steps };
+  return {
+    reply: reply || "(Genie returned no answer text)",
+    steps,
+    conversationId,
+    queryResults: queryResults.length ? queryResults : undefined,
+    visualizations: visualizations.length ? visualizations : undefined,
+  };
 }
-
 // Execute a SQL query using user authorization (if available) or fall back to app authorization.
 async function executeQuery(
   req: Request,
@@ -1043,17 +1113,16 @@ await createApp({
 
       // ── Genie AI query handler ─────────────────────────────────────
       // Proxies the Assistant tab to the Genie "Propulsion Reliability Intelligence" space.
+      // Supports stateful multi-turn conversations via conversationId round-trip.
       // Executes under the OBO token (logged-in user), granting Unity Catalog access.
-      // Returns { reply, steps, source } where:
-      //  - reply: final Genie answer text
-      //  - steps: any generated SQL or intermediate reasoning
-      //  - source: "live" on success, "mock" on fallback
+      // Returns { reply, steps, conversationId, queryResults, visualizations, source }
       app.post("/api/agent", async (req: Request, res: Response) => {
         const history: any[] = Array.isArray(req.body?.messages) ? req.body.messages : [];
+        const conversationId: string | undefined = req.body?.conversationId || undefined;
         const userMessage = history
           .filter((m: any) => m && m.role === "user" && typeof m.content === "string" && m.content.trim())
           .pop()?.content || "";
-        
+
         if (!userMessage.trim()) {
           res.status(400).json({ reply: "No message provided.", steps: [], source: "mock" });
           return;
@@ -1061,17 +1130,14 @@ await createApp({
 
         try {
           const spaceId = process.env.DATABRICKS_GENIE_SPACE_ID;
-          if (!spaceId) {
-            throw new Error("DATABRICKS_GENIE_SPACE_ID not configured");
-          }
+          if (!spaceId) throw new Error("DATABRICKS_GENIE_SPACE_ID not configured");
 
-          const { reply, steps } = await handleGenieQuery(req, spaceId, userMessage);
-          res.json({ reply, steps, source: "live" });
+          const result = await handleGenieQuery(req, spaceId, userMessage, conversationId);
+          res.json({ ...result, source: "live" });
         } catch (err: any) {
           console.warn(`[Genie] /api/agent fallback: ${err}`);
           res.json({
-            reply:
-              "The Propulsion Assistant is unavailable right now. Please try again in a moment.",
+            reply: "The Propulsion Assistant is unavailable right now. Please try again in a moment.",
             steps: [],
             source: "mock",
           });
