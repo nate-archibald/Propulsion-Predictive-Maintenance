@@ -193,6 +193,7 @@ async function handleGenieQuery(
     const startData: any = await startRes.json();
     conversationId = startData.conversation_id || startData.conversation?.id;
     messageId = startData.message_id || startData.message?.id;
+    console.log(`[Genie] new conversation: conv=${conversationId} msg=${messageId}`);
   }
 
   if (!conversationId || !messageId) {
@@ -1133,6 +1134,7 @@ await createApp({
           if (!spaceId) throw new Error("DATABRICKS_GENIE_SPACE_ID not configured");
 
           const result = await handleGenieQuery(req, spaceId, userMessage, conversationId);
+          console.log(`[Genie] /api/agent response conversationId=${result.conversationId} (incoming=${conversationId})`);
           res.json({ ...result, source: "live" });
         } catch (err: any) {
           console.warn(`[Genie] /api/agent fallback: ${err}`);
