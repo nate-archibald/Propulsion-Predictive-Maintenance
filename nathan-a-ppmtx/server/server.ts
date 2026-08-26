@@ -123,19 +123,39 @@ function parseDateParam(raw: unknown): string | null {
 const GENIE_POLL_INTERVAL_MS = 2000;
 const GENIE_POLL_MAX_ATTEMPTS = 60; // 2 min max wait
 
-// Augment user messages to clarify transaction_type filtering intent.
+// Augment user messages to clarify transaction_type filtering intent and part naming conventions.
 // The transaction history table has transaction_type = 'REMOVE' | 'INSTALL'.
-// Without a hint, Genie often counts all transactions when users say "removals".
+// Aviation part descriptions use inconsistent naming (noun-first, natural order, abbreviated).
 function augmentGenieMessage(message: string): string {
   const removalPattern = /\b(removal|removals|removed|unscheduled removal|scheduled removal)\b/i;
   const installPattern = /\b(install|installation|installations|installed)\b/i;
+  // Detect part name references — multi-word component names the user likely typed in natural order
+  // e.g. "fuel pump", "hydraulic pump", "oil filter", "check valve", "fuel control unit"
+  const partNamePattern = /\b(fuel pump|oil pump|hydraulic pump|hyd pump|fuel control|fuel control unit|fcu|oil filter|check valve|boost pump|engine driven pump|edp|acmp|dc pump|ac pump|starter|igc|ignition exciter|igniter|bleed valve|thrust reverser|fan blade|turbine blade|compressor blade|lpt|hpt|engine driven|power turbine|combustion liner|nozzle guide vane|flow divider)\b/i;
+
+  const hints: string[] = [];
+
   if (removalPattern.test(message) && !installPattern.test(message)) {
-    return (
-      message +
-      "\n\n[Data context: Filter to transaction_type = 'REMOVE' only. " +
+    hints.push(
+      "Filter to transaction_type = 'REMOVE' only. " +
       "Do NOT count installations (transaction_type = 'INSTALL'). " +
-      "Only REMOVE transactions count as removals.]"
+      "Only REMOVE transactions count as removals."
     );
+  }
+
+  if (partNamePattern.test(message)) {
+    hints.push(
+      "IMPORTANT — part descriptions in this database use inconsistent naming conventions. " +
+      "When filtering by part name, ALWAYS use split keywords with AND conditions: " +
+      "e.g. WHERE UPPER(pn_description) LIKE '%FUEL%' AND UPPER(pn_description) LIKE '%PUMP%'. " +
+      "NEVER use a single LIKE '%fuel pump%' — that will miss most results. " +
+      "This catches noun-first format ('PUMP, FUEL'), natural order ('FUEL PUMP'), " +
+      "abbreviated ('HYD PUMP'), and other variants."
+    );
+  }
+
+  if (hints.length > 0) {
+    return message + "\n\n[Data context: " + hints.join(" | ") + "]";
   }
   return message;
 }
