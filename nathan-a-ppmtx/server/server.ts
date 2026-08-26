@@ -123,6 +123,23 @@ function parseDateParam(raw: unknown): string | null {
 const GENIE_POLL_INTERVAL_MS = 2000;
 const GENIE_POLL_MAX_ATTEMPTS = 60; // 2 min max wait
 
+// Augment user messages to clarify transaction_type filtering intent.
+// The transaction history table has transaction_type = 'REMOVE' | 'INSTALL'.
+// Without a hint, Genie often counts all transactions when users say "removals".
+function augmentGenieMessage(message: string): string {
+  const removalPattern = /\b(removal|removals|removed|unscheduled removal|scheduled removal)\b/i;
+  const installPattern = /\b(install|installation|installations|installed)\b/i;
+  if (removalPattern.test(message) && !installPattern.test(message)) {
+    return (
+      message +
+      "\n\n[Data context: Filter to transaction_type = 'REMOVE' only. " +
+      "Do NOT count installations (transaction_type = 'INSTALL'). " +
+      "Only REMOVE transactions count as removals.]"
+    );
+  }
+  return message;
+}
+
 export interface GenieQueryResult {
   columns: string[];
   rows: string[][];
@@ -1133,7 +1150,7 @@ await createApp({
           const spaceId = process.env.DATABRICKS_GENIE_SPACE_ID;
           if (!spaceId) throw new Error("DATABRICKS_GENIE_SPACE_ID not configured");
 
-          const result = await handleGenieQuery(req, spaceId, userMessage, conversationId);
+          const result = await handleGenieQuery(req, spaceId, augmentGenieMessage(userMessage), conversationId);
           console.log(`[Genie] /api/agent response conversationId=${result.conversationId} (incoming=${conversationId})`);
           res.json({ ...result, source: "live" });
         } catch (err: any) {

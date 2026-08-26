@@ -94,7 +94,7 @@ function QueryResultTable({ result }: { result: QueryResult }) {
                 <tr key={ri} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   {row.map((cell, ci) => (
                     <td key={ci} className="px-2 py-1.5 whitespace-nowrap text-muted-foreground">
-                      {cell ?? "â€”"}
+                      {cell ?? "—"}
                     </td>
                   ))}
                 </tr>
@@ -164,7 +164,7 @@ export default function AssistantPage() {
         ...prev,
         {
           role: "assistant",
-          content: "Sorry â€” I couldn't reach the Propulsion Assistant. Please try again.",
+          content: "Sorry — I couldn't reach the Propulsion Assistant. Please try again.",
           error: true,
           source: "mock",
         },
@@ -183,7 +183,7 @@ export default function AssistantPage() {
             Propulsion Assistant
           </h2>
           <p className="text-muted-foreground mt-1">
-            Ask questions about propulsion defects, parts, and reliability â€” powered by
+            Ask questions about propulsion defects, parts, and reliability — powered by
             Propulsion Reliability Intelligence.
           </p>
         </div>
@@ -276,7 +276,7 @@ export default function AssistantPage() {
                   {m.role === "assistant" && m.source === "mock" && !m.error && (
                     <div className="mt-2 inline-flex items-center gap-1 text-xs text-[var(--warning)]">
                       <AlertTriangle className="h-3 w-3" />
-                      Assistant offline â€” showing a fallback message
+                      Assistant offline — showing a fallback message
                     </div>
                   )}
                 </CardContent>
@@ -301,7 +301,7 @@ export default function AssistantPage() {
                   <span className="h-2 w-2 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
                   <span className="h-2 w-2 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
                   <span className="h-2 w-2 rounded-full bg-current animate-bounce" />
-                  <span className="ml-2">Thinkingâ€¦</span>
+                  <span className="ml-2">Thinking…</span>
                 </div>
               </CardContent>
             </Card>
@@ -320,7 +320,7 @@ export default function AssistantPage() {
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={conversationId ? "Ask a follow-up questionâ€¦" : "Ask about propulsion defects, parts, reliabilityâ€¦"}
+          placeholder={conversationId ? "Ask a follow-up question…" : "Ask about propulsion defects, parts, reliability…"}
           disabled={sending}
           data-testid="assistant-input"
           aria-label="Message the Propulsion Assistant"
