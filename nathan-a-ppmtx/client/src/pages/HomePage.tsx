@@ -118,6 +118,13 @@ export default function HomePage() {
     "/api/fleet-leaders"
   );
 
+  const { data: byAtaDetail } = useLakebaseData<{
+    ata: string;
+    top3: { desc: string; count: number }[];
+    recentDesc: string;
+    recentDate: string;
+  }>(`/api/defects/by-ata/detail${dateQs}`);
+
   const kpi = kpiRows[0];
   // Only show the full-page skeleton on the very first load; once we have data,
   // keep the page mounted (and the date inputs focused) during refetches.
@@ -129,6 +136,50 @@ export default function HomePage() {
   const cancelCount = kpi?.cancelCount ?? 0;
   const vibrationPireps = kpi?.vibrationPireps ?? 0;
   const openEcmp = kpi?.openEcmp ?? 0;
+
+  // Build a lookup map for the rich ATA tooltip
+  const ataDetailMap = new Map(byAtaDetail.map((d) => [d.ata, d]));
+
+  // ECharts tooltip formatter — shows total count, top-3 defects, most recent
+  const ataTooltipOptions: Record<string, unknown> = {
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      formatter: (params: unknown[]) => {
+        const p = (params as Array<{ name: string; value: number; seriesName: string }>)[0];
+        if (!p) return "";
+        const detail = ataDetailMap.get(p.name);
+        const ataRow = ataData.find((d) => d.ata === p.name);
+        const desc = ataRow?.description ?? "";
+
+        let html = `<div style="min-width:220px;max-width:300px;font-size:12px">`;
+        html += `<div style="font-weight:700;margin-bottom:4px">${p.name}${desc ? ` — ${desc}` : ""}</div>`;
+        html += `<div style="margin-bottom:8px;color:#888">Total defects: <strong>${p.value}</strong></div>`;
+
+        if (detail?.top3?.length) {
+          html += `<div style="font-weight:600;margin-bottom:4px">Top 3 defect types</div>`;
+          detail.top3.forEach((t, i) => {
+            const truncated = t.desc.length > 45 ? t.desc.slice(0, 42) + "…" : t.desc;
+            html += `<div style="margin-bottom:2px">${i + 1}. ${truncated} <span style="color:#888">(${t.count})</span></div>`;
+          });
+        }
+
+        if (detail?.recentDesc || detail?.recentDate) {
+          html += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd;font-weight:600">Most recent</div>`;
+          if (detail.recentDate) {
+            html += `<div style="color:#888;margin-bottom:2px">${detail.recentDate}</div>`;
+          }
+          if (detail.recentDesc) {
+            const truncated = detail.recentDesc.length > 60 ? detail.recentDesc.slice(0, 57) + "…" : detail.recentDesc;
+            html += `<div>${truncated}</div>`;
+          }
+        }
+
+        html += `</div>`;
+        return html;
+      },
+    },
+  };
 
   if (loading) return <Skeleton className="h-96 w-full" />;
 
@@ -336,6 +387,7 @@ export default function HomePage() {
               yKey="count"
               height={280}
               colors={["var(--chart-1)"]}
+              options={ataTooltipOptions}
             />
           </CardContent>
         </Card>

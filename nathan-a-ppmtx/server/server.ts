@@ -532,6 +532,75 @@ await createApp({
         }
       });
 
+      // ── Per-ATA detail: top-3 defect descriptions + most recent defect ──
+      // Used to power rich hover tooltips on the Defects by ATA bar chart.
+      app.get("/api/defects/by-ata/detail", async (req: Request, res: Response) => {
+        const from = parseDateParam(req.query.from);
+        const to = parseDateParam(req.query.to);
+        try {
+          const result = await executeQuery(
+            req,
+            appkit,
+            `WITH ata_data AS (
+               SELECT LPAD(c.chapter::text, 2, '0') || '-' || LPAD(c.section::text, 2, '0') AS ata,
+                      f.defect_description,
+                      d.calendar_date
+               FROM ${S}.qx_ppmtx_synced_gold_fact_defect f
+               JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
+               LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON f.reported_date_key = d.dim_date_key
+               WHERE c.chapter IN (${PROP_ATA_LIST})
+                 AND ($1::date IS NULL OR d.calendar_date >= $1::date)
+                 AND ($2::date IS NULL OR d.calendar_date <= $2::date)
+             ),
+             desc_counts AS (
+               SELECT ata, defect_description, COUNT(*)::int AS cnt,
+                      ROW_NUMBER() OVER (PARTITION BY ata ORDER BY COUNT(*) DESC) AS rn
+               FROM ata_data
+               WHERE defect_description IS NOT NULL AND TRIM(defect_description) <> ''
+               GROUP BY ata, defect_description
+             ),
+             top3 AS (
+               SELECT ata, defect_description, cnt, rn FROM desc_counts WHERE rn <= 3
+             ),
+             recent AS (
+               SELECT DISTINCT ON (ata) ata,
+                      defect_description AS recent_desc,
+                      calendar_date AS recent_date
+               FROM ata_data
+               ORDER BY ata, calendar_date DESC NULLS LAST
+             )
+             SELECT t.ata, t.defect_description, t.cnt, t.rn,
+                    r.recent_desc, r.recent_date::text AS recent_date
+             FROM top3 t
+             JOIN recent r ON t.ata = r.ata
+             ORDER BY t.ata, t.rn`,
+            [from, to],
+          );
+          // Aggregate rows (one per top-3 entry) into a map keyed by ATA
+          type DetailEntry = { ata: string; top3: { desc: string; count: number }[]; recentDesc: string; recentDate: string };
+          const map = new Map<string, DetailEntry>();
+          for (const row of result.rows) {
+            const ata = row.ata as string;
+            if (!map.has(ata)) {
+              map.set(ata, {
+                ata,
+                top3: [],
+                recentDesc: (row.recent_desc as string) || "",
+                recentDate: (row.recent_date as string) || "",
+              });
+            }
+            const entry = map.get(ata)!;
+            if (row.defect_description) {
+              entry.top3.push({ desc: row.defect_description as string, count: row.cnt as number });
+            }
+          }
+          res.json({ data: Array.from(map.values()), source: "live" });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/defects/by-ata/detail fallback: ${err}`);
+          res.json({ data: [], source: "mock" });
+        }
+      });
+
       // ── Weekly defect trend ──────────────────────────────────────────
       app.get("/api/defects/weekly-trend", async (req: Request, res: Response) => {
         const weeks = clampLimit(req.query.weeks, 12, 104);
