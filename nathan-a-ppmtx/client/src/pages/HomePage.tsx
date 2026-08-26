@@ -407,6 +407,7 @@ export default function HomePage() {
               yKey="count"
               height={280}
               colors={["var(--chart-2)"]}
+              smooth={false}
             />
           </CardContent>
         </Card>
