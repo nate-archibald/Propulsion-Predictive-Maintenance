@@ -627,6 +627,82 @@ await createApp({
         }
       });
 
+      // ── Soft Time Recommendations (component shop visit intervals) ────
+      app.get("/api/soft-times", async (req: Request, res: Response) => {
+        // ERP description → { displayName, softLimit (cycles) }
+        const softTimeConfig: Record<string, { displayName: string; softLimit: number }> = {
+          "PUMP, FUEL":                                        { displayName: "Fuel Pump",                   softLimit: 20000 },
+          "METERING UNIT FUEL":                               { displayName: "FMU",                         softLimit: 18000 },
+          "FUEL INJECTOR":                                    { displayName: "Fuel Injector",               softLimit: 14000 },
+          "ELECTRONIC ENGINE CONTROL - FADEC":                { displayName: "FADEC",                       softLimit: 18000 },
+          "ACTUATOR MASTER COMPRESSOR VARIABLE GEOMETRY":     { displayName: "Master CVG Actuator",         softLimit: 18000 },
+          "ACTUATOR VGSV":                                    { displayName: "Slave CVG Actuator",          softLimit: 18000 },
+          "PUMP, LUBE AND SCAVENGE OIL":                      { displayName: "Lube and Scavenge Oil Pump",  softLimit: 20000 },
+          "VALVE, SEAL PRESSURE REGULATOR":                   { displayName: "Seal PRV",                    softLimit: 6000  },
+        };
+
+        const erpDescriptions = Object.keys(softTimeConfig);
+        const descList = erpDescriptions.map((d) => `'${d.replace(/'/g, "''")}'`).join(", ");
+
+        try {
+          // For each ERP description, find matching PNs and get the highest CSN
+          // currently on-wing (installed on an aircraft) as a proxy for fleet exposure
+          const result = await executeQuery(
+            req,
+            appkit,
+            `SELECT
+               p.pn_description AS erp_description,
+               COUNT(DISTINCT ic.sn)::int AS unit_count,
+               MAX(ic.actual_cycles)::int AS max_csn,
+               AVG(ic.actual_cycles)::float AS avg_csn,
+               MIN(ic.actual_cycles)::int AS min_csn
+             FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
+             JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
+             JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s ON ic.sn = s.sn
+             WHERE UPPER(p.pn_description) IN (${descList.toUpperCase()})
+               AND s.installed_ac IS NOT NULL
+               AND ic.actual_cycles IS NOT NULL
+               AND ic.actual_cycles > 0
+             GROUP BY p.pn_description`,
+          );
+
+          // Build response keyed by display name
+          const byDesc: Record<string, { unitCount: number; maxCsn: number; avgCsn: number; minCsn: number }> = {};
+          for (const row of result.rows) {
+            const key = String(row.erp_description ?? "").toUpperCase();
+            byDesc[key] = {
+              unitCount: Number(row.unit_count) || 0,
+              maxCsn: Number(row.max_csn) || 0,
+              avgCsn: Math.round(Number(row.avg_csn) || 0),
+              minCsn: Number(row.min_csn) || 0,
+            };
+          }
+
+          const data = erpDescriptions.map((erpDesc) => {
+            const { displayName, softLimit } = softTimeConfig[erpDesc];
+            const stats = byDesc[erpDesc.toUpperCase()];
+            return {
+              displayName,
+              softLimit,
+              unitCount: stats?.unitCount ?? 0,
+              maxCsn: stats?.maxCsn ?? 0,
+              avgCsn: stats?.avgCsn ?? 0,
+              minCsn: stats?.minCsn ?? 0,
+            };
+          });
+
+          res.json({ data, source: "live" });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/soft-times fallback: ${err}`);
+          // Fallback with static soft limits only
+          const fallback = erpDescriptions.map((erpDesc) => {
+            const { displayName, softLimit } = softTimeConfig[erpDesc];
+            return { displayName, softLimit, unitCount: 0, maxCsn: 0, avgCsn: 0, minCsn: 0 };
+          });
+          res.json({ data: fallback, source: "mock" });
+        }
+      });
+
       // ── Parts (life-limited / inventory control) ─────────────────────
       app.get("/api/parts", async (req: Request, res: Response) => {
         const limit = clampLimit(req.query.limit, 300, 2000);

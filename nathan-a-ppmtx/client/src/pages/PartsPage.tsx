@@ -8,9 +8,86 @@ import {
   Input,
   Skeleton,
 } from "@databricks/appkit-ui/react";
-import { Search, Package, ArrowRight } from "lucide-react";
+import { Search, Package, ArrowRight, Clock } from "lucide-react";
 import type { Part } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
+
+interface SoftTimeRow {
+  displayName: string;
+  softLimit: number;
+  unitCount: number;
+  maxCsn: number;
+  avgCsn: number;
+  minCsn: number;
+}
+
+function SoftTimesTable() {
+  const { data, source } = useLakebaseData<SoftTimeRow>("/api/soft-times");
+  const loading = source === "loading";
+
+  if (loading) return <Skeleton className="h-40 w-full" />;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Clock className="h-4 w-4" />
+          Component Soft Time Recommendations
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">Component</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Soft Limit (cyc)</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Fleet Units</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Min CSN</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Avg CSN</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Max CSN</th>
+                <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">Utilization</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row) => {
+                const pct = row.softLimit > 0 ? Math.min(100, Math.round((row.maxCsn / row.softLimit) * 100)) : 0;
+                const barColor =
+                  pct >= 90 ? "bg-destructive" :
+                  pct >= 75 ? "bg-[var(--warning)]" :
+                  "bg-[var(--success)]";
+                return (
+                  <tr key={row.displayName} className="border-b last:border-0 hover:bg-muted/40">
+                    <td className="py-2 px-3 font-medium">{row.displayName}</td>
+                    <td className="py-2 px-3 text-right font-mono text-xs">{row.softLimit.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right text-muted-foreground">{row.unitCount > 0 ? row.unitCount : "—"}</td>
+                    <td className="py-2 px-3 text-right font-mono text-xs">{row.minCsn > 0 ? row.minCsn.toLocaleString() : "—"}</td>
+                    <td className="py-2 px-3 text-right font-mono text-xs">{row.avgCsn > 0 ? row.avgCsn.toLocaleString() : "—"}</td>
+                    <td className={`py-2 px-3 text-right font-mono text-xs font-semibold ${pct >= 90 ? "text-destructive" : pct >= 75 ? "text-[var(--warning)]" : ""}`}>
+                      {row.maxCsn > 0 ? row.maxCsn.toLocaleString() : "—"}
+                    </td>
+                    <td className="py-2 px-3">
+                      {row.maxCsn > 0 ? (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden min-w-16">
+                            <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-xs text-muted-foreground w-8 text-right">{pct}%</span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function ConditionBadge({ condition }: { condition: string }) {
   const styles: Record<string, string> = {
@@ -64,6 +141,9 @@ export default function PartsPage() {
           Search by Part Number, Serial Number, or Engine S/N
         </p>
       </div>
+
+      {/* Soft Time Recommendations */}
+      <SoftTimesTable />
 
       {/* Search */}
       <div className="relative max-w-md">
