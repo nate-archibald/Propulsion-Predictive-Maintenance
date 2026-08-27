@@ -1077,17 +1077,35 @@ await createApp({
           // Query: count parts that are NOT installed and have spare condition codes
           // Using snapshot table for current state (not transaction history)
           // FIX: Exclude parts installed on shop engines/APUs (installed_position IN ENG/APU)
+          
+          // DEBUG: First, show the raw data
+          const debugResult = await executeQuery(
+            req,
+            appkit,
+            `SELECT p.pn, s.sn, s.installed_ac, s.installed_position, st.station_code, s.condition
+             FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
+             JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_station st ON s.dim_station_key = st.dim_station_key
+             WHERE p.pn = '4120T05P04'
+               AND s.installed_ac IS NULL
+               AND s.condition IN (${conditionList})
+             ORDER BY st.station_code, s.sn`,
+          );
+          console.log(`[DEBUG 4120T05P04] Raw data (${debugResult.rows.length} rows):`, debugResult.rows);
+          
           const result = await executeQuery(
             req,
             appkit,
             `SELECT p.pn, COUNT(DISTINCT s.sn)::int AS spare_count
              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_station st ON s.dim_station_key = st.dim_station_key
              WHERE p.pn IN (${pnList})
                AND s.installed_ac IS NULL
                AND (s.installed_position IS NULL 
                     OR TRIM(COALESCE(s.installed_position, '')) NOT IN ('LH ENG', 'RH ENG', 'APU'))
                AND s.condition IN (${conditionList})
+               AND (st.station_code IS NULL OR st.station_code NOT IN ('ENG', 'SHOP', 'ENGINE SHOP', 'MAINTENANCE'))
              GROUP BY p.pn`,
           );
 
