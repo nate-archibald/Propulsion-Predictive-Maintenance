@@ -629,7 +629,7 @@ await createApp({
 
       // ── Soft Time Recommendations (component shop visit intervals) ────
       app.get("/api/soft-times", async (req: Request, res: Response) => {
-        // ERP description → { displayName, softLimit (cycles) }
+        // ERP description → { displayName, softLimit (hours) }
         const softTimeConfig: Record<string, { displayName: string; softLimit: number }> = {
           "PUMP, FUEL":                                        { displayName: "Fuel Pump",                   softLimit: 20000 },
           "METERING UNIT FUEL":                               { displayName: "FMU",                         softLimit: 18000 },
@@ -645,36 +645,37 @@ await createApp({
         const descList = erpDescriptions.map((d) => `'${d.replace(/'/g, "''")}'`).join(", ");
 
         try {
-          // For each ERP description, find matching PNs and get the highest CSN
-          // currently on-wing (installed on an aircraft) as a proxy for fleet exposure
+          // For each ERP description, get TSO (time since overhaul) hours for on-wing units.
+          // control = 'TSR' tracks hours/cycles since last overhaul/repair reset.
           const result = await executeQuery(
             req,
             appkit,
             `SELECT
                p.pn_description AS erp_description,
                COUNT(DISTINCT ic.sn)::int AS unit_count,
-               MAX(ic.actual_cycles)::int AS max_csn,
-               AVG(ic.actual_cycles)::float AS avg_csn,
-               MIN(ic.actual_cycles)::int AS min_csn
+               MAX(ic.actual_hours)::int AS max_tso,
+               AVG(ic.actual_hours)::float AS avg_tso,
+               MIN(ic.actual_hours)::int AS min_tso
              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
              JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s ON ic.sn = s.sn
              WHERE UPPER(p.pn_description) IN (${descList.toUpperCase()})
+               AND ic.control = 'TSR'
                AND s.installed_ac IS NOT NULL
-               AND ic.actual_cycles IS NOT NULL
-               AND ic.actual_cycles > 0
+               AND ic.actual_hours IS NOT NULL
+               AND ic.actual_hours > 0
              GROUP BY p.pn_description`,
           );
 
-          // Build response keyed by display name
-          const byDesc: Record<string, { unitCount: number; maxCsn: number; avgCsn: number; minCsn: number }> = {};
+          // Build response keyed by erp description
+          const byDesc: Record<string, { unitCount: number; maxTso: number; avgTso: number; minTso: number }> = {};
           for (const row of result.rows) {
             const key = String(row.erp_description ?? "").toUpperCase();
             byDesc[key] = {
               unitCount: Number(row.unit_count) || 0,
-              maxCsn: Number(row.max_csn) || 0,
-              avgCsn: Math.round(Number(row.avg_csn) || 0),
-              minCsn: Number(row.min_csn) || 0,
+              maxTso: Number(row.max_tso) || 0,
+              avgTso: Math.round(Number(row.avg_tso) || 0),
+              minTso: Number(row.min_tso) || 0,
             };
           }
 
@@ -685,9 +686,9 @@ await createApp({
               displayName,
               softLimit,
               unitCount: stats?.unitCount ?? 0,
-              maxCsn: stats?.maxCsn ?? 0,
-              avgCsn: stats?.avgCsn ?? 0,
-              minCsn: stats?.minCsn ?? 0,
+              maxTso: stats?.maxTso ?? 0,
+              avgTso: stats?.avgTso ?? 0,
+              minTso: stats?.minTso ?? 0,
             };
           });
 
@@ -697,7 +698,7 @@ await createApp({
           // Fallback with static soft limits only
           const fallback = erpDescriptions.map((erpDesc) => {
             const { displayName, softLimit } = softTimeConfig[erpDesc];
-            return { displayName, softLimit, unitCount: 0, maxCsn: 0, avgCsn: 0, minCsn: 0 };
+          return { displayName, softLimit, unitCount: 0, maxTso: 0, avgTso: 0, minTso: 0 };
           });
           res.json({ data: fallback, source: "mock" });
         }

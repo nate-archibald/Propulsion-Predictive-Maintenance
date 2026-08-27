@@ -16,9 +16,9 @@ interface SoftTimeRow {
   displayName: string;
   softLimit: number;
   unitCount: number;
-  maxCsn: number;
-  avgCsn: number;
-  minCsn: number;
+  maxTso: number;
+  avgTso: number;
+  minTso: number;
 }
 
 function SoftTimesTable() {
@@ -41,17 +41,17 @@ function SoftTimesTable() {
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">Component</th>
-                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Soft Limit (cyc)</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Soft Limit (hrs)</th>
                 <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Fleet Units</th>
-                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Min CSN</th>
-                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Avg CSN</th>
-                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Max CSN</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Min TSO</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Avg TSO</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Max TSO</th>
                 <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">Utilization</th>
               </tr>
             </thead>
             <tbody>
               {data.map((row) => {
-                const pct = row.softLimit > 0 ? Math.min(100, Math.round((row.maxCsn / row.softLimit) * 100)) : 0;
+                const pct = row.softLimit > 0 ? Math.min(100, Math.round((row.maxTso / row.softLimit) * 100)) : 0;
                 const barColor =
                   pct >= 90 ? "bg-destructive" :
                   pct >= 75 ? "bg-[var(--warning)]" :
@@ -61,13 +61,13 @@ function SoftTimesTable() {
                     <td className="py-2 px-3 font-medium">{row.displayName}</td>
                     <td className="py-2 px-3 text-right font-mono text-xs">{row.softLimit.toLocaleString()}</td>
                     <td className="py-2 px-3 text-right text-muted-foreground">{row.unitCount > 0 ? row.unitCount : "—"}</td>
-                    <td className="py-2 px-3 text-right font-mono text-xs">{row.minCsn > 0 ? row.minCsn.toLocaleString() : "—"}</td>
-                    <td className="py-2 px-3 text-right font-mono text-xs">{row.avgCsn > 0 ? row.avgCsn.toLocaleString() : "—"}</td>
+                    <td className="py-2 px-3 text-right font-mono text-xs">{row.minTso > 0 ? row.minTso.toLocaleString() : "—"}</td>
+                    <td className="py-2 px-3 text-right font-mono text-xs">{row.avgTso > 0 ? row.avgTso.toLocaleString() : "—"}</td>
                     <td className={`py-2 px-3 text-right font-mono text-xs font-semibold ${pct >= 90 ? "text-destructive" : pct >= 75 ? "text-[var(--warning)]" : ""}`}>
-                      {row.maxCsn > 0 ? row.maxCsn.toLocaleString() : "—"}
+                      {row.maxTso > 0 ? row.maxTso.toLocaleString() : "—"}
                     </td>
                     <td className="py-2 px-3">
-                      {row.maxCsn > 0 ? (
+                      {row.maxTso > 0 ? (
                         <div className="flex items-center gap-2">
                           <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden min-w-16">
                             <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
