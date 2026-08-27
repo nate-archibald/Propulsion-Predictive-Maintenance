@@ -1076,6 +1076,7 @@ await createApp({
 
           // Query: count parts that are NOT installed and have spare condition codes
           // Using snapshot table for current state (not transaction history)
+          // FIX: Exclude parts installed on shop engines/APUs (installed_position IN ENG/APU)
           const result = await executeQuery(
             req,
             appkit,
@@ -1084,6 +1085,8 @@ await createApp({
              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
              WHERE p.pn IN (${pnList})
                AND s.installed_ac IS NULL
+               AND (s.installed_position IS NULL 
+                    OR TRIM(COALESCE(s.installed_position, '')) NOT IN ('LH ENG', 'RH ENG', 'APU'))
                AND s.condition IN (${conditionList})
              GROUP BY p.pn`,
           );
