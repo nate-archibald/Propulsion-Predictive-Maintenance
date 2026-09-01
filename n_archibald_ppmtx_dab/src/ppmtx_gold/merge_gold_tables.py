@@ -25,14 +25,19 @@ dbutils.widgets.text("catalog", "subject_maintenanceengineering", "Catalog")
 dbutils.widgets.text("schema", "an_maintenanceengineering_ods", "Schema")
 dbutils.widgets.text("silver_catalog", "subject_maintenanceengineering_test", "Silver Catalog")
 dbutils.widgets.text("silver_schema", "an_maintenanceengineering_ods", "Silver Schema")
+dbutils.widgets.text("bronze_catalog", "subject_maintenanceengineering", "Bronze Catalog")
+dbutils.widgets.text("bronze_schema", "ds_maintenanceengineering_ods", "Bronze Schema")
 
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
 silver_catalog = dbutils.widgets.get("silver_catalog")
 silver_schema = dbutils.widgets.get("silver_schema")
+bronze_catalog = dbutils.widgets.get("bronze_catalog")
+bronze_schema = dbutils.widgets.get("bronze_schema")
 
 print(f"Gold target: {catalog}.{schema}")
 print(f"Silver source: {silver_catalog}.{silver_schema}")
+print(f"Bronze source: {bronze_catalog}.{bronze_schema}")
 
 # COMMAND ----------
 
@@ -920,6 +925,75 @@ def merge_fact_inventory_control():
 
 # COMMAND ----------
 
+def merge_engine_live_times():
+    """Reconstruct LIVE engine TSN/TSC from bronze prod flight log + component
+    transaction history (airframe cumulative-counter delta over each on-wing
+    period). See n_archibald_ppmtx_dab/skills/trax-live-times-reconstruction.
+    Full-refresh via INSERT OVERWRITE so the table's declared PRIMARY KEY and CDF
+    (required by the Lakebase synced table qx_ppmtx_synced_gold_engine_live_times)
+    are preserved across runs."""
+    target_table = get_gold_table("qx_ppmtx_gold_engine_live_times")
+    txn = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_pn_transaction_history"
+    flt = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_actual_flights"
+
+    print(f"Merging: {target_table}")
+
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {target_table} (
+            engine_sn STRING NOT NULL,
+            pn STRING,
+            live_tsn INT,
+            live_tsc INT,
+            on_wing_periods INT,
+            as_of_date DATE,
+            computed_at TIMESTAMP,
+            CONSTRAINT pk_engine_live_times PRIMARY KEY (engine_sn)
+        ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
+    """)
+
+    spark.sql(f"""
+        INSERT OVERWRITE TABLE {target_table}
+        WITH ev AS (
+          SELECT DISTINCT sn, pn, ac,
+            CASE WHEN transaction_type='REMOVE' THEN 'END' ELSE 'START' END AS kind,
+            CAST(transaction_date AS DATE) AS d
+          FROM {txn}
+          WHERE pn LIKE 'CF34-8E5G%' AND sn IS NOT NULL AND ac IS NOT NULL
+        ),
+        ordered AS (
+          SELECT sn, pn, ac, kind, d,
+            LEAD(d) OVER (PARTITION BY sn ORDER BY d, CASE WHEN kind='END' THEN 0 ELSE 1 END) AS next_d
+          FROM ev
+        ),
+        periods AS (
+          SELECT sn, pn, ac AS tail, d AS s, COALESCE(next_d, DATE_ADD(CURRENT_DATE(), 1)) AS e
+          FROM ordered WHERE kind = 'START'
+        ),
+        per_period AS (
+          SELECT p.sn, MAX(p.pn) AS pn,
+            MAX(f.total_ac_flight_hours) - MIN(f.total_ac_flight_hours) AS hrs,
+            MAX(f.total_ac_cycles)       - MIN(f.total_ac_cycles)       AS cyc
+          FROM periods p
+          JOIN {flt} f ON f.ac = p.tail AND f.void <> 'Y'
+                     AND f.flight_date >= p.s AND f.flight_date < p.e
+          GROUP BY p.sn, p.tail, p.s, p.e
+        )
+        SELECT sn AS engine_sn,
+               MAX(pn) AS pn,
+               CAST(ROUND(SUM(hrs)) AS INT) AS live_tsn,
+               CAST(ROUND(SUM(cyc)) AS INT) AS live_tsc,
+               CAST(COUNT(*) AS INT) AS on_wing_periods,
+               CURRENT_DATE() AS as_of_date,
+               CURRENT_TIMESTAMP() AS computed_at
+        FROM per_period GROUP BY sn
+    """)
+
+    count = spark.table(target_table).count()
+    print(f"  ✓ engine_live_times: {count} rows")
+    return count
+
+# COMMAND ----------
+
 def merge_fact_order():
     """Merge fact_order from Silver order_detail."""
     source_table = get_silver_table("qx_ppmtx_order_detail")
@@ -1100,6 +1174,7 @@ results["fact_defect"] = merge_fact_defect()
 results["fact_inventory_transaction"] = merge_fact_inventory_transaction()
 results["fact_inventory_snapshot"] = merge_fact_inventory_snapshot()
 results["fact_inventory_control"] = merge_fact_inventory_control()
+results["engine_live_times"] = merge_engine_live_times()
 results["fact_order"] = merge_fact_order()
 results["fact_teardown"] = merge_fact_teardown()
 

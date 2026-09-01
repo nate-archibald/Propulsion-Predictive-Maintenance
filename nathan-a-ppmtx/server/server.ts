@@ -21,7 +21,6 @@ import {
   mapEngine,
   mapAPU,
 } from "./mappers.js";
-import { ENGINE_LIVE_TIMES, ENGINE_LIVE_TIMES_AS_OF } from "./engineLiveTimes.js";
 
 // Postgres schema holding the reverse-ETL synced Gold tables (qx_ppmtx_synced_gold_*).
 const DB_SCHEMA = process.env.DB_SCHEMA || "an_maintenanceengineering_ods";
@@ -941,27 +940,29 @@ await createApp({
             )
             SELECT 
               t.engine_sn, t.tail, t.position,
-              t.total_hours::integer AS total_hours,
-              t.total_cycles::integer AS total_cycles,
+              COALESCE(elt.live_tsn, t.total_hours)::integer AS total_hours,
+              COALESCE(elt.live_tsc, t.total_cycles)::integer AS total_cycles,
+              elt.as_of_date AS live_times_as_of,
               tsr.last_shop_visit
             FROM engine_tsn t
             LEFT JOIN engine_tsr tsr ON t.engine_sn = tsr.sn
+            LEFT JOIN ${S}.qx_ppmtx_synced_gold_engine_live_times elt
+              ON elt.engine_sn = t.engine_sn
             WHERE t.rn = 1
             ORDER BY t.tail
             LIMIT $1`,
             [limit],
           );
-          // Phase 1 thin proof: override stale frozen TSN/TSC with the reconstructed
-          // live values (airframe-hours-since-install). Keyed by engine SN; falls back
-          // to the frozen value for any SN not in the lookup. See engineLiveTimes.ts.
-          const withLive = result.rows.map((r: any) => {
-            const lt = ENGINE_LIVE_TIMES[String(r.engine_sn ?? "").trim()];
-            return lt ? { ...r, total_hours: lt.tsn, total_cycles: lt.tsc } : r;
-          });
+          // Live engine TSN/TSC come from the synced gold table
+          // qx_ppmtx_synced_gold_engine_live_times (airframe-hours-since-install,
+          // refreshed by the gold merge job). COALESCE above falls back to the
+          // frozen fact_inventory_control value for any SN not yet reconstructed.
+          const liveTimesAsOf = result.rows.find((r: any) => r.live_times_as_of)
+            ?.live_times_as_of ?? null;
           res.json({
-            data: withLive.map(mapEngine),
+            data: result.rows.map(mapEngine),
             source: "live",
-            liveTimesAsOf: ENGINE_LIVE_TIMES_AS_OF,
+            liveTimesAsOf,
           });
         } catch (err) {
           console.warn(`[Lakebase] /api/engines fallback: ${err}`);

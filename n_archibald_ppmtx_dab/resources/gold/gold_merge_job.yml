@@ -20,6 +20,8 @@ resources:
               schema: ${var.silver_schema}
               silver_catalog: ${var.catalog}
               silver_schema: ${var.silver_schema}
+              bronze_catalog: ${var.bronze_catalog}
+              bronze_schema: ${var.bronze_schema}
           environment_key: gold_env
 
       environments:
