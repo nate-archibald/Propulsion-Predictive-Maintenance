@@ -8,12 +8,13 @@ import {
   Input,
   Skeleton,
 } from "@databricks/appkit-ui/react";
-import { Search, Package, ArrowRight, Clock } from "lucide-react";
+import { Search, Package, ArrowRight, Clock, CalendarClock, AlertTriangle } from "lucide-react";
 import type { Part } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 
 interface SoftTimeRow {
   displayName: string;
+  partNumbers: string;
   softLimit: number;
   unitCount: number;
   maxTso: number;
@@ -41,6 +42,7 @@ function SoftTimesTable() {
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">Component</th>
+                <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">Part Number(s)</th>
                 <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Soft Limit (hrs)</th>
                 <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Fleet Units</th>
                 <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Min TSO</th>
@@ -59,6 +61,7 @@ function SoftTimesTable() {
                 return (
                   <tr key={row.displayName} className="border-b last:border-0 hover:bg-muted/40">
                     <td className="py-2 px-3 font-medium">{row.displayName}</td>
+                    <td className="py-2 px-3 font-mono text-xs text-muted-foreground">{row.partNumbers || "—"}</td>
                     <td className="py-2 px-3 text-right font-mono text-xs">{row.softLimit.toLocaleString()}</td>
                     <td className="py-2 px-3 text-right text-muted-foreground">{row.unitCount > 0 ? row.unitCount : "—"}</td>
                     <td className="py-2 px-3 text-right font-mono text-xs">{row.minTso > 0 ? row.minTso.toLocaleString() : "—"}</td>
@@ -84,6 +87,190 @@ function SoftTimesTable() {
             </tbody>
           </table>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface ForecastUnit {
+  pn: string;
+  sn: string;
+  tso: number;
+  hoursRemaining: number;
+  projectedCrossDate: string;
+  status: "overdue" | "due";
+}
+
+interface ForecastGroup {
+  displayName: string;
+  softLimit: number;
+  alreadyDue: number;
+  dueInWindow: number;
+  totalFlagged: number;
+  units: ForecastUnit[];
+}
+
+const WINDOW_OPTIONS = [
+  { label: "6 months", months: 6 },
+  { label: "1 year", months: 12 },
+  { label: "2 years", months: 24 },
+  { label: "3 years", months: 36 },
+];
+
+// Overhaul budget planner: pick a utilization rate + forward window and see
+// which soft-time units will cross their limit — the LLP/overhaul budget view.
+function OverhaulForecast() {
+  const [hrsPerDay, setHrsPerDay] = useState(7.5);
+  const [months, setMonths] = useState(12);
+
+  const endpoint = `/api/overhaul-forecast?hrsPerDay=${hrsPerDay}&months=${months}`;
+  const { data, source } = useLakebaseData<ForecastGroup>(endpoint);
+  const loading = source === "loading";
+
+  const windowLabel = WINDOW_OPTIONS.find((w) => w.months === months)?.label ?? `${months} months`;
+  const totalDue = data.reduce((s, g) => s + (g.dueInWindow ?? 0), 0);
+  const totalOverdue = data.reduce((s, g) => s + (g.alreadyDue ?? 0), 0);
+
+  // Flatten all flagged units for the detail table, tagged with their component.
+  const allUnits = data.flatMap((g) =>
+    (g.units ?? []).map((u) => ({ ...u, component: g.displayName })),
+  );
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <CalendarClock className="h-4 w-4" />
+            Overhaul Budget Forecast
+          </CardTitle>
+          <div className="flex items-center gap-4 text-sm">
+            <label className="flex items-center gap-1.5 text-muted-foreground">
+              Rate
+              <input
+                type="number"
+                value={hrsPerDay}
+                min={0.1}
+                max={24}
+                step={0.1}
+                onChange={(e) => setHrsPerDay(Number(e.target.value))}
+                onBlur={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isFinite(v) || v <= 0) setHrsPerDay(7.5);
+                }}
+                className="w-20 rounded-md border bg-background px-2 py-1 text-foreground text-sm"
+                aria-label="Utilization rate (hours per day)"
+              />
+              <span className="text-xs">hrs/day</span>
+            </label>
+            <label className="flex items-center gap-1.5 text-muted-foreground">
+              Window
+              <select
+                value={months}
+                onChange={(e) => setMonths(Number(e.target.value))}
+                className="rounded-md border bg-background px-2 py-1 text-foreground text-sm"
+                aria-label="Forecast window"
+              >
+                {WINDOW_OPTIONS.map((w) => (
+                  <option key={w.months} value={w.months}>{w.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Skeleton className="h-40 w-full" />
+        ) : (
+          <div className="space-y-4">
+            {/* Headline numbers */}
+            <div className="grid grid-cols-2 gap-3 sm:max-w-md">
+              <div className="rounded-lg border p-3">
+                <div className="text-2xl font-bold">{totalDue}</div>
+                <div className="text-xs text-muted-foreground">
+                  units reach soft limit within {windowLabel}
+                </div>
+              </div>
+              <div className={`rounded-lg border p-3 ${totalOverdue > 0 ? "border-destructive/40" : ""}`}>
+                <div className={`text-2xl font-bold flex items-center gap-1.5 ${totalOverdue > 0 ? "text-destructive" : ""}`}>
+                  {totalOverdue > 0 && <AlertTriangle className="h-5 w-5" />}
+                  {totalOverdue}
+                </div>
+                <div className="text-xs text-muted-foreground">already past soft limit</div>
+              </div>
+            </div>
+
+            {/* Per-component breakdown */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="py-2 px-3 text-left font-medium text-muted-foreground">Component</th>
+                    <th className="py-2 px-3 text-right font-medium text-muted-foreground">Soft Limit (hrs)</th>
+                    <th className="py-2 px-3 text-right font-medium text-muted-foreground">Due in {windowLabel}</th>
+                    <th className="py-2 px-3 text-right font-medium text-muted-foreground">Already Overdue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((g) => (
+                    <tr key={g.displayName} className="border-b last:border-0 hover:bg-muted/40">
+                      <td className="py-2 px-3 font-medium">{g.displayName}</td>
+                      <td className="py-2 px-3 text-right font-mono text-xs">{g.softLimit.toLocaleString()}</td>
+                      <td className="py-2 px-3 text-right font-semibold">{g.dueInWindow > 0 ? g.dueInWindow : "—"}</td>
+                      <td className={`py-2 px-3 text-right font-semibold ${g.alreadyDue > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                        {g.alreadyDue > 0 ? g.alreadyDue : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Affected unit detail */}
+            {allUnits.length > 0 && (
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1.5 px-1">
+                  Affected units ({allUnits.length})
+                </div>
+                <div className="overflow-x-auto max-h-80 overflow-y-auto rounded-lg border">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-muted">
+                      <tr className="border-b">
+                        <th className="py-2 px-3 text-left font-medium text-muted-foreground">Component</th>
+                        <th className="py-2 px-3 text-left font-medium text-muted-foreground">P/N</th>
+                        <th className="py-2 px-3 text-left font-medium text-muted-foreground">S/N</th>
+                        <th className="py-2 px-3 text-right font-medium text-muted-foreground">TSO (hrs)</th>
+                        <th className="py-2 px-3 text-right font-medium text-muted-foreground">Hrs Remaining</th>
+                        <th className="py-2 px-3 text-left font-medium text-muted-foreground">Est. Limit Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allUnits.map((u, i) => (
+                        <tr key={`${u.pn}-${u.sn}-${i}`} className="border-b last:border-0 hover:bg-muted/40">
+                          <td className="py-1.5 px-3">{u.component}</td>
+                          <td className="py-1.5 px-3 font-mono text-xs">{u.pn}</td>
+                          <td className="py-1.5 px-3 font-mono text-xs">{u.sn}</td>
+                          <td className="py-1.5 px-3 text-right font-mono text-xs">{u.tso.toLocaleString()}</td>
+                          <td className={`py-1.5 px-3 text-right font-mono text-xs ${u.status === "overdue" ? "text-destructive font-semibold" : ""}`}>
+                            {u.hoursRemaining.toLocaleString()}
+                          </td>
+                          <td className="py-1.5 px-3 text-xs">
+                            {u.status === "overdue" ? (
+                              <span className="text-destructive font-medium">Overdue</span>
+                            ) : (
+                              u.projectedCrossDate
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -144,6 +331,9 @@ export default function PartsPage() {
 
       {/* Soft Time Recommendations */}
       <SoftTimesTable />
+
+      {/* Overhaul Budget Forecast */}
+      <OverhaulForecast />
 
       {/* Search */}
       <div className="relative max-w-md">

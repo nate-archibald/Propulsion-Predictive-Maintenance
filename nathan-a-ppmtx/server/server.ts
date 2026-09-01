@@ -21,6 +21,7 @@ import {
   mapEngine,
   mapAPU,
 } from "./mappers.js";
+import { ENGINE_LIVE_TIMES, ENGINE_LIVE_TIMES_AS_OF } from "./engineLiveTimes.js";
 
 // Postgres schema holding the reverse-ETL synced Gold tables (qx_ppmtx_synced_gold_*).
 const DB_SCHEMA = process.env.DB_SCHEMA || "an_maintenanceengineering_ods";
@@ -115,6 +116,22 @@ function parseDateParam(raw: unknown): string | null {
   const s = raw.trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
+
+// ── Soft-time component catalog (shared by /api/soft-times + /api/overhaul-forecast) ──
+// ERP description → { displayName, softLimit (hours) }. Each entry uses a LIKE
+// pattern (wrapped in % wildcards at query time) so minor ERP description
+// variations still match. These are the 8 CF34 propulsion soft-time components
+// tracked for the LLP / overhaul budget forecast.
+const SOFT_TIME_CONFIG: { likePattern: string; displayName: string; softLimit: number }[] = [
+  { likePattern: "PUMP, FUEL",                                   displayName: "Fuel Pump",                  softLimit: 20000 },
+  { likePattern: "METERING%FUEL",                                displayName: "FMU",                        softLimit: 18000 },
+  { likePattern: "FUEL INJECTOR",                                displayName: "Fuel Injector",              softLimit: 14000 },
+  { likePattern: "ELECTRONIC ENGINE CONTROL%FADEC",             displayName: "FADEC",                      softLimit: 18000 },
+  { likePattern: "ACTUATOR MASTER COMPRESSOR VARIABLE GEOMETRY", displayName: "Master CVG Actuator",        softLimit: 18000 },
+  { likePattern: "ACTUATOR VGSV",                                displayName: "Slave CVG Actuator",         softLimit: 18000 },
+  { likePattern: "PUMP, LUBE AND SCAVENGE OIL",                 displayName: "Lube and Scavenge Oil Pump", softLimit: 20000 },
+  { likePattern: "VALVE, SEAL PRESSURE REGULATOR",              displayName: "Seal PRV",                   softLimit: 6000  },
+];
 
 // ── Genie REST API direct integration ────
 // Supports stateful multi-turn conversations (follow-up questions retain full context),
@@ -629,49 +646,64 @@ await createApp({
 
       // ── Soft Time Recommendations (component shop visit intervals) ────
       app.get("/api/soft-times", async (req: Request, res: Response) => {
-        // ERP description → { displayName, softLimit (hours) }
-        const softTimeConfig: Record<string, { displayName: string; softLimit: number }> = {
-          "PUMP, FUEL":                                        { displayName: "Fuel Pump",                   softLimit: 20000 },
-          "METERING UNIT FUEL":                               { displayName: "FMU",                         softLimit: 18000 },
-          "FUEL INJECTOR":                                    { displayName: "Fuel Injector",               softLimit: 14000 },
-          "ELECTRONIC ENGINE CONTROL - FADEC":                { displayName: "FADEC",                       softLimit: 18000 },
-          "ACTUATOR MASTER COMPRESSOR VARIABLE GEOMETRY":     { displayName: "Master CVG Actuator",         softLimit: 18000 },
-          "ACTUATOR VGSV":                                    { displayName: "Slave CVG Actuator",          softLimit: 18000 },
-          "PUMP, LUBE AND SCAVENGE OIL":                      { displayName: "Lube and Scavenge Oil Pump",  softLimit: 20000 },
-          "VALVE, SEAL PRESSURE REGULATOR":                   { displayName: "Seal PRV",                    softLimit: 6000  },
-        };
-
-        const erpDescriptions = Object.keys(softTimeConfig);
-        const descList = erpDescriptions.map((d) => `'${d.replace(/'/g, "''")}'`).join(", ");
-
+        const softTimeConfig = SOFT_TIME_CONFIG;
         try {
-          // For each ERP description, get TSO (time since overhaul) hours for on-wing units.
-          // control = 'TSR' tracks hours/cycles since last overhaul/repair reset.
+          // Run one query per component using LIKE matching; UNION ALL them together.
+          //
+          // Correctness notes (see the current-state CTE below):
+          //  • The snapshot fact accumulates one row PER BATCH, so a serial has many
+          //    historical rows across years/aircraft/conditions. We must reduce to the
+          //    CURRENT state (latest batch per dim_part_key + sn) before counting.
+          //  • Serial numbers are NOT unique across part numbers, so TSO is joined on
+          //    BOTH dim_part_key AND sn — never sn alone (which cross-contaminates hours).
+          //  • Scrapped units (condition SCRP) are excluded from the fleet unit
+          //    count; all other conditions — including BADSTOCK and U/S — are kept.
+          //  • Outlier/sentinel hour values (> 2× the soft limit) are dropped from the
+          //    TSO min/avg/max stats.
+          const unionParts = softTimeConfig.map(({ likePattern, displayName, softLimit }) => {
+            const escapedPattern = likePattern.replace(/'/g, "''").replace(/^%+|%+$/g, "");
+            const cap = softLimit * 2;
+            return `
+              SELECT
+                '${displayName.replace(/'/g, "''")}' AS display_name,
+                STRING_AGG(DISTINCT cs.pn, ', ' ORDER BY cs.pn) AS part_numbers,
+                COUNT(*)::int AS unit_count,
+                MAX(CASE WHEN cs.tso_hours > 0 AND cs.tso_hours <= ${cap} THEN cs.tso_hours END)::int AS max_tso,
+                AVG(CASE WHEN cs.tso_hours > 0 AND cs.tso_hours <= ${cap} THEN cs.tso_hours END)::float AS avg_tso,
+                MIN(CASE WHEN cs.tso_hours > 0 AND cs.tso_hours <= ${cap} THEN cs.tso_hours END)::int AS min_tso
+              FROM (
+                SELECT cur.pn, t.tso_hours
+                FROM (
+                  SELECT p.pn, snap.dim_part_key, snap.sn, snap.condition,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY snap.dim_part_key, snap.sn
+                      ORDER BY snap.snapshot_date_key DESC, snap.batch DESC
+                    ) AS rn
+                  FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot snap
+                  JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON snap.dim_part_key = p.dim_part_key
+                  WHERE UPPER(p.pn_description) LIKE UPPER('%${escapedPattern}%')
+                ) cur
+                LEFT JOIN (
+                  SELECT dim_part_key, sn, MAX(actual_hours) AS tso_hours
+                  FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control
+                  WHERE control = 'TSO'
+                  GROUP BY dim_part_key, sn
+                ) t ON t.dim_part_key = cur.dim_part_key AND t.sn = cur.sn
+                WHERE cur.rn = 1 AND cur.condition NOT IN ('SCRP')
+              ) cs`;
+          });
+
           const result = await executeQuery(
             req,
             appkit,
-            `SELECT
-               p.pn_description AS erp_description,
-               COUNT(DISTINCT ic.sn)::int AS unit_count,
-               MAX(ic.actual_hours)::int AS max_tso,
-               AVG(ic.actual_hours)::float AS avg_tso,
-               MIN(ic.actual_hours)::int AS min_tso
-             FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
-             JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
-             JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s ON ic.sn = s.sn
-             WHERE UPPER(p.pn_description) IN (${descList.toUpperCase()})
-               AND ic.control = 'TSR'
-               AND s.installed_ac IS NOT NULL
-               AND ic.actual_hours IS NOT NULL
-               AND ic.actual_hours > 0
-             GROUP BY p.pn_description`,
+            unionParts.join("\n              UNION ALL\n") + "\n              ORDER BY display_name",
           );
 
-          // Build response keyed by erp description
-          const byDesc: Record<string, { unitCount: number; maxTso: number; avgTso: number; minTso: number }> = {};
+          // Build response in config order
+          const byName: Record<string, { partNumbers: string; unitCount: number; maxTso: number; avgTso: number; minTso: number }> = {};
           for (const row of result.rows) {
-            const key = String(row.erp_description ?? "").toUpperCase();
-            byDesc[key] = {
+            byName[String(row.display_name)] = {
+              partNumbers: String(row.part_numbers ?? ""),
               unitCount: Number(row.unit_count) || 0,
               maxTso: Number(row.max_tso) || 0,
               avgTso: Math.round(Number(row.avg_tso) || 0),
@@ -679,11 +711,11 @@ await createApp({
             };
           }
 
-          const data = erpDescriptions.map((erpDesc) => {
-            const { displayName, softLimit } = softTimeConfig[erpDesc];
-            const stats = byDesc[erpDesc.toUpperCase()];
+          const data = softTimeConfig.map(({ displayName, softLimit }) => {
+            const stats = byName[displayName];
             return {
               displayName,
+              partNumbers: stats?.partNumbers ?? "",
               softLimit,
               unitCount: stats?.unitCount ?? 0,
               maxTso: stats?.maxTso ?? 0,
@@ -696,11 +728,127 @@ await createApp({
         } catch (err) {
           console.warn(`[Lakebase] /api/soft-times fallback: ${err}`);
           // Fallback with static soft limits only
-          const fallback = erpDescriptions.map((erpDesc) => {
-            const { displayName, softLimit } = softTimeConfig[erpDesc];
-          return { displayName, softLimit, unitCount: 0, maxTso: 0, avgTso: 0, minTso: 0 };
-          });
+          const fallback = softTimeConfig.map(({ displayName, softLimit }) => ({
+            displayName, partNumbers: "", softLimit, unitCount: 0, maxTso: 0, avgTso: 0, minTso: 0,
+          }));
           res.json({ data: fallback, source: "mock" });
+        }
+      });
+
+      // ── Overhaul Forecast (LLP / soft-time budget projection) ────────
+      // For a chosen utilization rate (hrs/day) and forward window (months),
+      // projects each CURRENT-STATE unit's TSO forward and flags the units that
+      // will cross their component soft limit within the window. Used by the
+      // Parts page overhaul-budget planner.
+      app.get("/api/overhaul-forecast", async (req: Request, res: Response) => {
+        const softTimeConfig = SOFT_TIME_CONFIG;
+
+        // Utilization rate (hours flown per day). Default 7.5. Clamped to a sane range.
+        let hrsPerDay = parseFloat(String(req.query.hrsPerDay ?? ""));
+        if (!Number.isFinite(hrsPerDay) || hrsPerDay <= 0) hrsPerDay = 7.5;
+        hrsPerDay = Math.min(hrsPerDay, 24);
+
+        // Forward window in months. Default 12. Clamped 1..120.
+        const months = clampLimit(req.query.months, 12, 120);
+        const windowDays = months * 30.44;
+        const projectedHours = hrsPerDay * windowDays; // hours accrued over the window
+
+        try {
+          // One subquery per component returning the affected CURRENT-STATE units:
+          // those whose TSO is high enough that (TSO + projectedHours) reaches the
+          // soft limit within the window — plus units already past the limit.
+          // Sentinel/outlier hours (> 2× limit) are excluded as bad data.
+          const unionParts = softTimeConfig.map(({ likePattern, displayName, softLimit }) => {
+            const escapedPattern = likePattern.replace(/'/g, "''").replace(/^%+|%+$/g, "");
+            const cap = softLimit * 2;
+            const threshold = softLimit - projectedHours; // TSO at/above this crosses within window
+            return `
+              SELECT
+                '${displayName.replace(/'/g, "''")}' AS display_name,
+                ${softLimit} AS soft_limit,
+                cs.pn, cs.sn, cs.tso_hours
+              FROM (
+                SELECT cur.pn, cur.sn, t.tso_hours
+                FROM (
+                  SELECT p.pn, snap.dim_part_key, snap.sn, snap.condition,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY snap.dim_part_key, snap.sn
+                      ORDER BY snap.snapshot_date_key DESC, snap.batch DESC
+                    ) AS rn
+                  FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot snap
+                  JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON snap.dim_part_key = p.dim_part_key
+                  WHERE UPPER(p.pn_description) LIKE UPPER('%${escapedPattern}%')
+                ) cur
+                JOIN (
+                  SELECT dim_part_key, sn, MAX(actual_hours) AS tso_hours
+                  FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control
+                  WHERE control = 'TSO'
+                  GROUP BY dim_part_key, sn
+                ) t ON t.dim_part_key = cur.dim_part_key AND t.sn = cur.sn
+                WHERE cur.rn = 1 AND cur.condition NOT IN ('SCRP')
+              ) cs
+              WHERE cs.tso_hours > 0 AND cs.tso_hours <= ${cap}
+                AND cs.tso_hours >= ${threshold}`;
+          });
+
+          const result = await executeQuery(
+            req,
+            appkit,
+            unionParts.join("\n              UNION ALL\n"),
+          );
+
+          const now = Date.now();
+          const DAY_MS = 86_400_000;
+
+          // Group the affected units by component and compute per-unit projections.
+          const groups: Record<string, any> = {};
+          for (const { displayName, softLimit } of softTimeConfig) {
+            groups[displayName] = { displayName, softLimit, alreadyDue: 0, dueInWindow: 0, units: [] as any[] };
+          }
+          for (const row of result.rows) {
+            const displayName = String(row.display_name);
+            const softLimit = Number(row.soft_limit) || 0;
+            const tso = Number(row.tso_hours) || 0;
+            const g = groups[displayName];
+            if (!g) continue;
+
+            const hoursRemaining = softLimit - tso;      // < 0 → already past limit
+            const daysUntil = hoursRemaining / hrsPerDay; // may be negative
+            const alreadyDue = hoursRemaining <= 0;
+            const crossDate = new Date(now + daysUntil * DAY_MS).toISOString().slice(0, 10);
+
+            if (alreadyDue) g.alreadyDue += 1;
+            else g.dueInWindow += 1;
+
+            g.units.push({
+              pn: String(row.pn ?? ""),
+              sn: String(row.sn ?? ""),
+              tso: Math.round(tso),
+              hoursRemaining: Math.round(hoursRemaining),
+              projectedCrossDate: crossDate,
+              status: alreadyDue ? "overdue" : "due",
+            });
+          }
+
+          // Sort each component's units by soonest crossing first.
+          const data = softTimeConfig.map(({ displayName }) => {
+            const g = groups[displayName];
+            g.units.sort((a: any, b: any) => a.hoursRemaining - b.hoursRemaining);
+            g.totalFlagged = g.units.length;
+            return g;
+          });
+
+          res.json({
+            data,
+            meta: { hrsPerDay, months, windowDays: Math.round(windowDays) },
+            source: "live",
+          });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/overhaul-forecast fallback: ${err}`);
+          const fallback = softTimeConfig.map(({ displayName, softLimit }) => ({
+            displayName, softLimit, alreadyDue: 0, dueInWindow: 0, totalFlagged: 0, units: [],
+          }));
+          res.json({ data: fallback, meta: { hrsPerDay, months, windowDays: Math.round(windowDays) }, source: "mock" });
         }
       });
 
@@ -803,7 +951,18 @@ await createApp({
             LIMIT $1`,
             [limit],
           );
-          res.json({ data: result.rows.map(mapEngine), source: "live" });
+          // Phase 1 thin proof: override stale frozen TSN/TSC with the reconstructed
+          // live values (airframe-hours-since-install). Keyed by engine SN; falls back
+          // to the frozen value for any SN not in the lookup. See engineLiveTimes.ts.
+          const withLive = result.rows.map((r: any) => {
+            const lt = ENGINE_LIVE_TIMES[String(r.engine_sn ?? "").trim()];
+            return lt ? { ...r, total_hours: lt.tsn, total_cycles: lt.tsc } : r;
+          });
+          res.json({
+            data: withLive.map(mapEngine),
+            source: "live",
+            liveTimesAsOf: ENGINE_LIVE_TIMES_AS_OF,
+          });
         } catch (err) {
           console.warn(`[Lakebase] /api/engines fallback: ${err}`);
           res.json({ data: MOCK_ENGINES, source: "mock" });
