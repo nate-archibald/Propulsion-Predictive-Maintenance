@@ -117,19 +117,30 @@ function parseDateParam(raw: unknown): string | null {
 }
 
 // ── Soft-time component catalog (shared by /api/soft-times + /api/overhaul-forecast) ──
-// ERP description → { displayName, softLimit (hours) }. Each entry uses a LIKE
-// pattern (wrapped in % wildcards at query time) so minor ERP description
-// variations still match. These are the 8 CF34 propulsion soft-time components
-// tracked for the LLP / overhaul budget forecast.
-const SOFT_TIME_CONFIG: { likePattern: string; displayName: string; softLimit: number }[] = [
-  { likePattern: "PUMP, FUEL",                                   displayName: "Fuel Pump",                  softLimit: 20000 },
-  { likePattern: "METERING%FUEL",                                displayName: "FMU",                        softLimit: 18000 },
+// Each entry matches units either by explicit PN list (preferred — catches all
+// interchangeable PNs regardless of description) or by a LIKE pattern against
+// pn_description. When `pnList` is present it takes precedence.
+//
+// FMU, Fuel Pump, Master CVG, and Seal PRV use PN lists because their
+// interchangeable PNs have inconsistent or null descriptions that a single LIKE
+// misses. FADEC, Slave CVG, and Lube Oil Pump match cleanly by description.
+const SOFT_TIME_CONFIG: {
+  likePattern?: string;
+  pnList?: string[];
+  displayName: string;
+  softLimit: number;
+}[] = [
+  { pnList: ["829500-7", "829500-9", "4120T04P07", "4120T04P09"],
+                                                                 displayName: "Fuel Pump",                  softLimit: 20000 },
+  { pnList: ["8061-926", "4120T01P02"],                          displayName: "FMU",                        softLimit: 18000 },
   { likePattern: "FUEL INJECTOR",                                displayName: "Fuel Injector",              softLimit: 14000 },
   { likePattern: "ELECTRONIC ENGINE CONTROL%FADEC",             displayName: "FADEC",                      softLimit: 18000 },
-  { likePattern: "ACTUATOR MASTER COMPRESSOR VARIABLE GEOMETRY", displayName: "Master CVG Actuator",        softLimit: 18000 },
+  { pnList: ["1211508-003","1211508-004","1211508-005","1211508-006","1211508-007",
+             "4120T02P02","4120T02P03","4120T02P05","4120T02P06","4120T02P07"],
+                                                                 displayName: "Master CVG Actuator",        softLimit: 18000 },
   { likePattern: "ACTUATOR VGSV",                                displayName: "Slave CVG Actuator",         softLimit: 18000 },
   { likePattern: "PUMP, LUBE AND SCAVENGE OIL",                 displayName: "Lube and Scavenge Oil Pump", softLimit: 20000 },
-  { likePattern: "VALVE, SEAL PRESSURE REGULATOR",              displayName: "Seal PRV",                   softLimit: 6000  },
+  { pnList: ["421645-2","421645","4123T61P01","4123T61P03"],     displayName: "Seal PRV",                   softLimit: 6000  },
 ];
 
 // ── Genie REST API direct integration ────
@@ -659,8 +670,10 @@ await createApp({
           //    count; all other conditions — including BADSTOCK and U/S — are kept.
           //  • Outlier/sentinel hour values (> 2× the soft limit) are dropped from the
           //    TSO min/avg/max stats.
-          const unionParts = softTimeConfig.map(({ likePattern, displayName, softLimit }) => {
-            const escapedPattern = likePattern.replace(/'/g, "''").replace(/^%+|%+$/g, "");
+          const unionParts = softTimeConfig.map(({ likePattern, pnList, displayName, softLimit }) => {
+            const partFilter = pnList
+              ? `p.pn IN (${pnList.map(pn => `'${pn.replace(/'/g, "''")}'`).join(", ")})`
+              : `UPPER(p.pn_description) LIKE UPPER('%${(likePattern ?? "").replace(/'/g, "''").replace(/^%+|%+$/g, "")}%')`;
             const cap = softLimit * 2;
             return `
               SELECT
@@ -680,7 +693,7 @@ await createApp({
                     ) AS rn
                   FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot snap
                   JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON snap.dim_part_key = p.dim_part_key
-                  WHERE UPPER(p.pn_description) LIKE UPPER('%${escapedPattern}%')
+                  WHERE ${partFilter}
                 ) cur
                 LEFT JOIN (
                   SELECT dim_part_key, sn, MAX(actual_hours) AS tso_hours
@@ -757,8 +770,10 @@ await createApp({
           // those whose TSO is high enough that (TSO + projectedHours) reaches the
           // soft limit within the window — plus units already past the limit.
           // Sentinel/outlier hours (> 2× limit) are excluded as bad data.
-          const unionParts = softTimeConfig.map(({ likePattern, displayName, softLimit }) => {
-            const escapedPattern = likePattern.replace(/'/g, "''").replace(/^%+|%+$/g, "");
+          const unionParts = softTimeConfig.map(({ likePattern, pnList, displayName, softLimit }) => {
+            const partFilter = pnList
+              ? `p.pn IN (${pnList.map(pn => `'${pn.replace(/'/g, "''")}'`).join(", ")})`
+              : `UPPER(p.pn_description) LIKE UPPER('%${(likePattern ?? "").replace(/'/g, "''").replace(/^%+|%+$/g, "")}%')`;
             const cap = softLimit * 2;
             const threshold = softLimit - projectedHours; // TSO at/above this crosses within window
             return `
@@ -776,7 +791,7 @@ await createApp({
                     ) AS rn
                   FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot snap
                   JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON snap.dim_part_key = p.dim_part_key
-                  WHERE UPPER(p.pn_description) LIKE UPPER('%${escapedPattern}%')
+                  WHERE ${partFilter}
                 ) cur
                 JOIN (
                   SELECT dim_part_key, sn, MAX(actual_hours) AS tso_hours
