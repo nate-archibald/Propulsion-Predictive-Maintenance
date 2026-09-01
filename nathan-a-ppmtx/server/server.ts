@@ -1093,19 +1093,30 @@ await createApp({
           const result = await executeQuery(
             req,
             appkit,
-            `WITH engine_leader AS (
+            `WITH engine_tsn AS (
               SELECT 
                 ic.sn, snap.installed_ac AS tail,
-                ic.actual_hours::integer AS total_hours,
-                ic.actual_cycles::integer AS total_cycles,
-                ROW_NUMBER() OVER (ORDER BY ic.actual_hours DESC) AS rn
+                ic.actual_hours AS frozen_hours,
+                ic.actual_cycles AS frozen_cycles,
+                ROW_NUMBER() OVER (
+                  ORDER BY COALESCE(elt.live_tsn, ic.actual_hours) DESC
+                ) AS rn
               FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
               JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
               JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot snap ON ic.sn = snap.sn
+              LEFT JOIN ${S}.qx_ppmtx_synced_gold_engine_live_times elt ON elt.engine_sn = ic.sn
               WHERE ic.control = 'TSN'
                 AND p.pn = 'CF34-8E5G01'
                 AND snap.installed_ac IS NOT NULL
-                AND ic.actual_hours > 0
+            ),
+            engine_leader AS (
+              SELECT 
+                t.sn, t.tail,
+                COALESCE(elt.live_tsn, t.frozen_hours)::integer AS total_hours,
+                COALESCE(elt.live_tsc, t.frozen_cycles)::integer AS total_cycles
+              FROM engine_tsn t
+              LEFT JOIN ${S}.qx_ppmtx_synced_gold_engine_live_times elt ON elt.engine_sn = t.sn
+              WHERE t.rn = 1
             ),
             apu_leader AS (
               SELECT 
@@ -1121,7 +1132,7 @@ await createApp({
                 AND snap.installed_ac IS NOT NULL
             )
             SELECT 'ENGINE' AS type, sn, tail, total_hours, total_cycles
-            FROM engine_leader WHERE rn = 1
+            FROM engine_leader
             UNION ALL
             SELECT 'APU' AS type, sn, tail, total_hours, total_cycles
             FROM apu_leader WHERE rn = 1`,
