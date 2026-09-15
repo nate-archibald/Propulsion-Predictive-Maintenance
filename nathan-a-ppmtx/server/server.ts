@@ -178,7 +178,7 @@ const SOFT_TIME_CONFIG: {
                                                                  displayName: "Fuel Pump",                  softLimit: 20000 },
   { pnList: ["8061-926", "4120T01P02"],                          displayName: "FMU",                        softLimit: 18000 },
   { likePattern: "FUEL INJECTOR",                                displayName: "Fuel Injector",              softLimit: 14000 },
-  { likePattern: "ELECTRONIC ENGINE CONTROL%FADEC",             displayName: "FADEC",                      softLimit: 18000 },
+  { likePattern: "ELECTRONIC ENGINE CONTROL%FADEC",             displayName: "FADEC",                      softLimit: 36000 },
   { pnList: ["1211508-003","1211508-004","1211508-005","1211508-006","1211508-007",
              "4120T02P02","4120T02P03","4120T02P05","4120T02P06","4120T02P07"],
                                                                  displayName: "Master CVG Actuator",        softLimit: 18000 },
