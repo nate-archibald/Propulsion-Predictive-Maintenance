@@ -277,3 +277,31 @@ if pk_errors:
     print("\nPK constraint errors:")
     for t, e in pk_errors:
         print(f"  {t}: {e}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Create Live Times Tables (not in YAML)
+
+# COMMAND ----------
+
+# Create part_live_tso table (live reconstruction of TSO from flight log)
+target_table = f"{catalog}.{schema}.qx_ppmtx_gold_part_live_tso"
+try:
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {target_table} (
+            pn STRING,
+            sn STRING NOT NULL,
+            reset_date DATE,
+            baseline_tso_hours INT,
+            flight_hours_since_reset INT,
+            live_tso INT,
+            on_wing_periods INT,
+            as_of_date DATE,
+            computed_at TIMESTAMP,
+            CONSTRAINT pk_part_live_tso PRIMARY KEY (sn, pn)
+        ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
+    """)
+    print(f"[OK] Created: {target_table}")
+except Exception as e:
+    print(f"[WARN] {target_table}: {e}")
