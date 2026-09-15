@@ -23,19 +23,60 @@ interface SoftTimeRow {
   minTso: number;
 }
 
-function SoftTimesTable() {
+// Fuel Injector overhauls happen at shop visit and aren't reliably posted back
+// to the ERP, so its soft-time figures are known to be unreliable. Both
+// widgets on this page share one toggle (lifted to PartsPage) to show/hide it.
+const FUEL_INJECTOR_NAME = "Fuel Injector";
+
+// When shown, the Fuel Injector row is moved to the bottom of the table
+// instead of sitting in its natural (3rd) position.
+function moveFuelInjectorToEnd<T extends { displayName: string }>(rows: T[]): T[] {
+  const rest = rows.filter((r) => r.displayName !== FUEL_INJECTOR_NAME);
+  const fuelInjector = rows.filter((r) => r.displayName === FUEL_INJECTOR_NAME);
+  return [...rest, ...fuelInjector];
+}
+
+function applyFuelInjectorVisibility<T extends { displayName: string }>(
+  rows: T[],
+  showFuelInjector: boolean,
+): T[] {
+  if (!showFuelInjector) return rows.filter((r) => r.displayName !== FUEL_INJECTOR_NAME);
+  return moveFuelInjectorToEnd(rows);
+}
+
+function SoftTimesTable({
+  showFuelInjector,
+  onToggleFuelInjector,
+}: {
+  showFuelInjector: boolean;
+  onToggleFuelInjector: (value: boolean) => void;
+}) {
   const { data, source } = useLakebaseData<SoftTimeRow>("/api/soft-times");
   const loading = source === "loading";
+
+  const rows = applyFuelInjectorVisibility(data, showFuelInjector);
 
   if (loading) return <Skeleton className="h-40 w-full" />;
 
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Clock className="h-4 w-4" />
-          Component Soft Time Recommendations
-        </CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            Component Soft Time Recommendations
+          </CardTitle>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showFuelInjector}
+              onChange={(e) => onToggleFuelInjector(e.target.checked)}
+              className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+              aria-label="Show Fuel Injector Data"
+            />
+            Show Fuel Injector Data
+          </label>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
@@ -53,7 +94,7 @@ function SoftTimesTable() {
               </tr>
             </thead>
             <tbody>
-              {data.map((row) => {
+              {rows.map((row) => {
                 const pct = row.softLimit > 0 ? Math.min(100, Math.round((row.maxTso / row.softLimit) * 100)) : 0;
                 const barColor =
                   pct >= 90 ? "bg-destructive/50" :
@@ -120,19 +161,23 @@ const WINDOW_OPTIONS = [
 
 // Overhaul budget planner: pick a utilization rate + forward window and see
 // which soft-time units will cross their limit — the LLP/overhaul budget view.
-function OverhaulForecast() {
+function OverhaulForecast({ showFuelInjector }: { showFuelInjector: boolean }) {
   const [hrsPerDay, setHrsPerDay] = useState(7.5);
   const [months, setMonths] = useState(12);
 
   const endpoint = `/api/overhaul-forecast?hrsPerDay=${hrsPerDay}&months=${months}`;
-  const { data, source } = useLakebaseData<ForecastGroup>(endpoint);
+  const { data: rawData, source } = useLakebaseData<ForecastGroup>(endpoint);
   const loading = source === "loading";
+
+  const data = applyFuelInjectorVisibility(rawData, showFuelInjector);
 
   const windowLabel = WINDOW_OPTIONS.find((w) => w.months === months)?.label ?? `${months} months`;
   const totalDue = data.reduce((s, g) => s + (g.dueInWindow ?? 0), 0);
   const totalOverdue = data.reduce((s, g) => s + (g.alreadyDue ?? 0), 0);
 
   // Flatten all flagged units for the detail table, tagged with their component.
+  // Group order already has Fuel Injector last (when shown), so its units
+  // naturally land at the bottom of this list too.
   const allUnits = data.flatMap((g) =>
     (g.units ?? []).map((u) => ({ ...u, component: g.displayName })),
   );
@@ -283,6 +328,11 @@ export default function PartsPage() {
   const initialSearch = searchParams.get("search") ?? "";
   const [search, setSearch] = useState(initialSearch);
   const [selectedPart, setSelectedPart] = useState<Part | null>(null);
+  // Fuel Injector is overhauled at shop visit and isn't reliably posted back
+  // to the ERP, so its soft-time data is known to be unreliable. Default to
+  // hidden; the toggle in the Soft Time Recommendations header controls both
+  // this widget and the Overhaul Budget Forecast widget below it.
+  const [showFuelInjector, setShowFuelInjector] = useState(false);
   const { data: parts, source } = useLakebaseData<Part>("/api/parts");
   const loading = source === "loading";
 
@@ -312,10 +362,10 @@ export default function PartsPage() {
       </div>
 
       {/* Soft Time Recommendations */}
-      <SoftTimesTable />
+      <SoftTimesTable showFuelInjector={showFuelInjector} onToggleFuelInjector={setShowFuelInjector} />
 
       {/* Overhaul Budget Forecast */}
-      <OverhaulForecast />
+      <OverhaulForecast showFuelInjector={showFuelInjector} />
 
       {/* Search — scopes only the parts table below */}
       <div className="relative max-w-md">
