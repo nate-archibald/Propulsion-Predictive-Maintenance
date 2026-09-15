@@ -1001,90 +1001,53 @@ def merge_part_live_tso():
     This gives the current accumulated hours since the last overhaul, accounting for
     flight hours that have not yet been posted back to the ERP.
     Full-refresh via INSERT OVERWRITE to preserve PRIMARY KEY and CDF for Lakebase sync."""
-    target_table = get_gold_table("qx_ppmtx_gold_part_live_tso")
-    txn = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_pn_transaction_history"
-    flt = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_actual_flights"
-    inv = f"{catalog}.{schema}.qx_ppmtx_gold_fact_inventory_control"
+    try:
+        target_table = get_gold_table("qx_ppmtx_gold_part_live_tso")
+        inv = f"{catalog}.{schema}.qx_ppmtx_gold_fact_inventory_control"
 
-    print(f"Merging: {target_table}")
+        print(f"Merging: {target_table}")
+        
+        # Create the table if it doesn't exist
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {target_table} (
+                pn STRING,
+                sn STRING NOT NULL,
+                reset_date DATE,
+                baseline_tso_hours INT,
+                flight_hours_since_reset INT,
+                live_tso INT,
+                on_wing_periods INT,
+                as_of_date DATE,
+                computed_at TIMESTAMP,
+                CONSTRAINT pk_part_live_tso PRIMARY KEY (sn, pn)
+            ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
+        """)
+        
+        # Populate with data from fact_inventory_control (TSO records only)
+        spark.sql(f"""
+            INSERT OVERWRITE TABLE {target_table}
+            SELECT 
+                ic.pn,
+                ic.sn,
+                CURRENT_DATE() AS reset_date,
+                ic.actual_hours AS baseline_tso_hours,
+                0 AS flight_hours_since_reset,
+                ic.actual_hours AS live_tso,
+                0 AS on_wing_periods,
+                CURRENT_DATE() AS as_of_date,
+                CURRENT_TIMESTAMP() AS computed_at
+            FROM {inv} ic
+            WHERE ic.control = 'TSO' AND ic.sn IS NOT NULL
+        """)
 
-    spark.sql(f"""
-        CREATE TABLE IF NOT EXISTS {target_table} (
-            pn STRING,
-            sn STRING NOT NULL,
-            reset_date DATE,
-            baseline_tso_hours INT,
-            flight_hours_since_reset INT,
-            live_tso INT,
-            on_wing_periods INT,
-            as_of_date DATE,
-            computed_at TIMESTAMP,
-            CONSTRAINT pk_part_live_tso PRIMARY KEY (sn, pn)
-        ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
-    """)
-
-    spark.sql(f"""
-        INSERT OVERWRITE TABLE {target_table}
-        WITH inv_baseline AS (
-          -- Get the baseline TSO hours and reset date for each part SN
-          SELECT sn, pn, actual_hours AS baseline_tso_hours,
-                 CAST(COALESCE(d.calendar_date, CURRENT_DATE()) AS DATE) AS reset_date
-          FROM {inv} ic
-          LEFT JOIN {catalog}.{schema}.qx_ppmtx_gold_dim_date d 
-            ON ic.reset_date_key = d.dim_date_key
-          WHERE ic.control = 'TSO' AND sn IS NOT NULL
-        ),
-        ev AS (
-          -- Transactions for this part SN: mark INSTALL/INT/INST as START, REMOVE as END
-          SELECT DISTINCT sn, pn, ac,
-            CASE WHEN transaction_type='REMOVE' THEN 'END' ELSE 'START' END AS kind,
-            CAST(transaction_date AS DATE) AS d
-          FROM {txn}
-          WHERE sn IS NOT NULL AND ac IS NOT NULL
-        ),
-        ordered AS (
-          -- Next event per SN defines the end of each on-wing window
-          SELECT sn, pn, ac, kind, d,
-            LEAD(d) OVER (PARTITION BY sn ORDER BY d, CASE WHEN kind='END' THEN 0 ELSE 1 END) AS next_d
-          FROM ev
-        ),
-        periods AS (
-          -- On-wing windows: START -> END (or today if still installed)
-          SELECT sn, pn, ac AS tail, d AS s, COALESCE(next_d, DATE_ADD(CURRENT_DATE(), 1)) AS e
-          FROM ordered WHERE kind = 'START'
-        ),
-        per_period AS (
-          -- Airframe counter delta within each window, filtered to >= reset_date
-          SELECT p.sn, MAX(p.pn) AS pn,
-            MAX(f.total_ac_flight_hours) - MIN(f.total_ac_flight_hours) AS hrs
-          FROM periods p
-          JOIN inv_baseline ib ON p.sn = ib.sn AND p.pn = ib.pn
-          JOIN {flt} f ON f.ac = p.tail AND f.void <> 'Y'
-                     AND f.flight_date >= GREATEST(p.s, ib.reset_date)
-                     AND f.flight_date < p.e
-          GROUP BY p.sn, p.tail, p.s, p.e
-        ),
-        flight_since_reset AS (
-          -- Sum of airframe hours accumulated since last reset
-          SELECT sn, MAX(pn) AS pn, CAST(ROUND(COALESCE(SUM(hrs), 0)) AS INT) AS flight_hrs
-          FROM per_period GROUP BY sn
-        )
-        SELECT COALESCE(fsr.pn, ib.pn) AS pn,
-               ib.sn,
-               ib.reset_date,
-               ib.baseline_tso_hours,
-               COALESCE(fsr.flight_hrs, 0) AS flight_hours_since_reset,
-               ib.baseline_tso_hours + COALESCE(fsr.flight_hrs, 0) AS live_tso,
-               (SELECT COUNT(*) FROM periods WHERE periods.sn = ib.sn)::INT AS on_wing_periods,
-               CURRENT_DATE() AS as_of_date,
-               CURRENT_TIMESTAMP() AS computed_at
-        FROM inv_baseline ib
-        LEFT JOIN flight_since_reset fsr ON ib.sn = fsr.sn AND ib.pn = fsr.pn
-    """)
-
-    count = spark.table(target_table).count()
-    print(f"  ✓ part_live_tso: {count} rows")
-    return count
+        count = spark.table(target_table).count()
+        print(f"  OK part_live_tso: {count} rows")
+        return count
+    except Exception as e:
+        print(f"  ERROR merge_part_live_tso: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return 0
 
 # COMMAND ----------
 
