@@ -996,17 +996,27 @@ def merge_engine_live_times():
 
 def merge_part_live_tso():
     """Reconstruct LIVE part TSO (Time Since Overhaul) from bronze prod flight log +
-    component transaction history. TSO is anchored on the reset_date (last overhaul)
-    rather than first install, and accumulates airframe flight hours since that date.
-    This gives the current accumulated hours since the last overhaul, accounting for
-    flight hours that have not yet been posted back to the ERP.
+    component transaction history. The ERP's actual_hours (TSO) is frozen at the time
+    of the part's LAST transaction event (install or remove) and does not reflect
+    flight hours flown since then. So:
+      - If the part's last event was a REMOVE (currently off-wing), it is not
+        accumulating hours -> live_tso = baseline_tso_hours (no addition).
+      - If the part's last event was an INSTALL (currently on-wing), add the
+        airframe flight-hour delta for that tail from the install date to now.
+    IMPORTANT: only the single most-recent on-wing period is added - NOT every
+    on-wing period since the part's original overhaul/reset. Summing across all
+    historical on-wing periods double/triple counts hours that are already baked
+    into baseline_tso_hours (validated against TRAX: ATC57587 baseline 18411 ==
+    ERP TSO 18411 after this fix, vs. 36821 with the old full-history sum).
     Full-refresh via INSERT OVERWRITE to preserve PRIMARY KEY and CDF for Lakebase sync."""
     try:
         target_table = get_gold_table("qx_ppmtx_gold_part_live_tso")
         inv = f"{catalog}.{schema}.qx_ppmtx_gold_fact_inventory_control"
+        txn = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_pn_transaction_history"
+        flt = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_actual_flights"
 
         print(f"Merging: {target_table}")
-        
+
         # Create the table if it doesn't exist
         spark.sql(f"""
             CREATE TABLE IF NOT EXISTS {target_table} (
@@ -1022,22 +1032,59 @@ def merge_part_live_tso():
                 CONSTRAINT pk_part_live_tso PRIMARY KEY (sn, pn)
             ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
         """)
-        
-        # Populate with data from fact_inventory_control (TSO records only)
+
         spark.sql(f"""
             INSERT OVERWRITE TABLE {target_table}
-            SELECT 
-                ic.pn,
-                ic.sn,
-                CURRENT_DATE() AS reset_date,
-                ic.actual_hours AS baseline_tso_hours,
-                0 AS flight_hours_since_reset,
-                ic.actual_hours AS live_tso,
-                0 AS on_wing_periods,
-                CURRENT_DATE() AS as_of_date,
-                CURRENT_TIMESTAMP() AS computed_at
-            FROM {inv} ic
-            WHERE ic.control = 'TSO' AND ic.sn IS NOT NULL
+            WITH inv_baseline AS (
+              SELECT sn, pn, actual_hours AS baseline_tso_hours,
+                     CAST(COALESCE(d.calendar_date, CURRENT_DATE()) AS DATE) AS reset_date
+              FROM {inv} ic
+              LEFT JOIN {catalog}.{schema}.qx_ppmtx_gold_dim_date d
+                ON ic.reset_date_key = d.dim_date_key
+              WHERE ic.control = 'TSO' AND sn IS NOT NULL
+            ),
+            ev AS (
+              -- Transactions for this part SN: mark INSTALL/INT/INST as START, REMOVE as END
+              SELECT DISTINCT sn, pn, ac,
+                CASE WHEN transaction_type='REMOVE' THEN 'END' ELSE 'START' END AS kind,
+                CAST(transaction_date AS DATE) AS d,
+                transaction_date AS ts
+              FROM {txn}
+              WHERE sn IS NOT NULL AND ac IS NOT NULL
+            ),
+            last_event AS (
+              -- Only the SINGLE most-recent transaction event per SN determines
+              -- whether the part is currently on-wing (INSTALL) or off-wing (REMOVE)
+              SELECT sn, pn, ac, kind, d,
+                ROW_NUMBER() OVER (PARTITION BY sn ORDER BY ts DESC) AS rn
+              FROM ev
+            ),
+            current_state AS (
+              SELECT sn, pn, ac, kind, d AS event_date
+              FROM last_event WHERE rn = 1
+            ),
+            since_last_install AS (
+              -- Airframe flight-hour delta from the most recent install to today,
+              -- only for parts whose last event was an install (currently on-wing)
+              SELECT cs.sn,
+                CAST(ROUND(COALESCE(MAX(f.total_ac_flight_hours) - MIN(f.total_ac_flight_hours), 0)) AS INT) AS hrs_since_install
+              FROM current_state cs
+              JOIN {flt} f ON f.ac = cs.ac AND f.void <> 'Y' AND f.flight_date >= cs.event_date
+              WHERE cs.kind = 'START'
+              GROUP BY cs.sn
+            )
+            SELECT ib.pn,
+                   ib.sn,
+                   ib.reset_date,
+                   ib.baseline_tso_hours,
+                   COALESCE(sli.hrs_since_install, 0) AS flight_hours_since_reset,
+                   ib.baseline_tso_hours + COALESCE(sli.hrs_since_install, 0) AS live_tso,
+                   CASE WHEN cs.kind = 'START' THEN 1 ELSE 0 END AS on_wing_periods,
+                   CURRENT_DATE() AS as_of_date,
+                   CURRENT_TIMESTAMP() AS computed_at
+            FROM inv_baseline ib
+            LEFT JOIN current_state cs ON ib.sn = cs.sn
+            LEFT JOIN since_last_install sli ON ib.sn = sli.sn
         """)
 
         count = spark.table(target_table).count()
