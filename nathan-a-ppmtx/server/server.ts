@@ -1,6 +1,5 @@
 ﻿import { createApp, server, lakebase, genie } from "@databricks/appkit";
 import type { Request, Response } from "express";
-import * as pg from "pg";
 import {
   MOCK_DEFECTS,
   MOCK_DEFECTS_BY_ATA,
@@ -11,6 +10,7 @@ import {
   MOCK_APUS,
   MOCK_KPIS,
   MOCK_FLEET_LEADERS,
+  MOCK_ECMP_DETAILS,
 } from "./mock-data.js";
 import {
   mapDefect,
@@ -27,39 +27,26 @@ const DB_SCHEMA = process.env.DB_SCHEMA || "an_maintenanceengineering_ods";
 const S = DB_SCHEMA;
 
 // ── User Authorization (OBO) helpers ─────────────────────────────────
-// Extract user token from request and create a user-specific Lakebase connection.
-// Falls back to null if token is missing (user authorization not enabled or not consented).
-interface UserLakebaseConnection {
-  query: (sql: string, params?: any[]) => Promise<any>;
-}
-
-async function getUserLakebaseConnection(req: Request): Promise<UserLakebaseConnection | null> {
-  const userToken = req.header("x-forwarded-access-token");
-  if (!userToken) return null;
+// Uses AppKit's built-in per-user Lakebase pool (AppKit.lakebase.asUser(req)).
+// It reads the x-forwarded-access-token / x-forwarded-email headers (set by the
+// Databricks Apps platform proxy) and authenticates as the signed-in user's own
+// Postgres role, so `current_user` in Postgres reflects the real user. Requires
+// `postgres` in `user_api_scopes` (databricks.yml) and a Postgres role created
+// for each user (see the databricks-lakebase skill / Lakebase "Branch Overview").
+// Falls back to null if the user token is missing or the per-user pool fails
+// (e.g. user has no Postgres role yet, or consent hasn't been granted).
+async function getUserLakebaseConnection(
+  req: Request,
+  appkit: any
+): Promise<{ query: (sql: string, params?: any[]) => Promise<any> } | null> {
+  if (!req.header("x-forwarded-access-token")) return null;
 
   try {
-    // Create a user-specific Postgres connection using the access token
-    const pool = new pg.Pool({
-      host: process.env.PGHOST,
-      port: parseInt(process.env.PGPORT || "5432", 10),
-      database: process.env.PGDATABASE,
-      user: process.env.PGUSER || "token",
-      password: userToken,
-      ssl: process.env.PGSSLMODE ? { rejectUnauthorized: false } : false,
-      application_name: process.env.PGAPPNAME || "nathan-a-ppmtx",
-    });
-
-    // Test the connection
-    const conn = await pool.connect();
-    conn.release();
-
-    return {
-      query: async (sql: string, params?: any[]) => {
-        const result = await pool.query(sql, params);
-        pool.end().catch(() => {});
-        return result;
-      },
-    };
+    const userClient = appkit.lakebase.asUser(req);
+    // Fail fast so we can fall back cleanly instead of surfacing an OBO-specific
+    // error to the end user.
+    await userClient.query("SELECT 1");
+    return userClient;
   } catch (err) {
     console.warn(`[User Auth] Failed to create user Lakebase connection: ${err}`);
     return null;
@@ -114,6 +101,63 @@ function parseDateParam(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+// ── Keyword-based defect classification ──────────────────────────────
+// Free-text defect narratives are almost never identical word-for-word (e.g.
+// "FUEL FLOW FLUCTUATION ON ENG 1 DURING CLIMB" vs "FUEL FLOW FLUCTUATING
+// ON ENGINE 2"), so grouping by exact string equality rarely surfaces real
+// "top defect type" clusters — nearly every row is its own singleton group.
+// Instead we tag each narrative with a recognized component + action
+// keyword (when present) and group by that canonical tag, which produces
+// meaningful clusters regardless of exact wording.
+const COMPONENT_KEYWORDS: { tag: string; pattern: RegExp }[] = [
+  { tag: "Fuel Control Unit", pattern: /\bfcu\b|fuel control unit/i },
+  { tag: "Fuel Manifold", pattern: /fuel manifold/i },
+  { tag: "Fuel Pump", pattern: /fuel pump/i },
+  { tag: "HPT Blade", pattern: /hpt blade/i },
+  { tag: "HPT Disk", pattern: /hpt disk/i },
+  { tag: "LPT Blade", pattern: /lpt blade/i },
+  { tag: "LPT Disk", pattern: /lpt disk/i },
+  { tag: "Fan Blade", pattern: /fan blade/i },
+  { tag: "Fan Disk", pattern: /fan disk/i },
+  { tag: "Oil Transfer Tube", pattern: /oil transfer tube/i },
+  { tag: "Oil Pressure Sensor", pattern: /oil pressure sensor/i },
+  { tag: "Oil Filter", pattern: /oil filter/i },
+  { tag: "Igniter Plug", pattern: /igniter/i },
+  { tag: "FADEC", pattern: /\bfadec\b/i },
+  { tag: "Stator Vane", pattern: /stator vane/i },
+  { tag: "HPC Impeller", pattern: /hpc impeller/i },
+  { tag: "Bleed Valve", pattern: /bleed valve/i },
+  { tag: "Thermocouple", pattern: /thermocouple/i },
+  { tag: "EGT / Trend Monitoring", pattern: /\begt\b|trend monitoring/i },
+  { tag: "Vibration", pattern: /vibration/i },
+  { tag: "Starter", pattern: /\bstarter\b/i },
+  { tag: "Generator", pattern: /generator/i },
+  { tag: "Borescope Finding", pattern: /borescope/i },
+];
+const ACTION_KEYWORDS: { tag: string; pattern: RegExp }[] = [
+  { tag: "Replacement", pattern: /replaced?|\br[\s/]?[&/]?[\s/]?r\b/i },
+  { tag: "Removal", pattern: /removed|removal/i },
+  { tag: "Repair", pattern: /repaired?/i },
+  { tag: "Inspection", pattern: /inspect(ed|ion)?/i },
+  { tag: "Leak", pattern: /leak/i },
+  { tag: "Fluctuation", pattern: /fluctuat/i },
+  { tag: "Overtemp", pattern: /over[\s-]?temp|overheat/i },
+  { tag: "Cleaning", pattern: /cleaned|cleaning/i },
+  { tag: "Adjustment", pattern: /adjusted|adjustment/i },
+  { tag: "Test", pattern: /tested|test failure/i },
+];
+
+// Classify a single defect narrative into a canonical "component — action"
+// tag (falling back to just component, just action, or "Other").
+function classifyDefectText(text: string): string {
+  const component = COMPONENT_KEYWORDS.find((k) => k.pattern.test(text));
+  const action = ACTION_KEYWORDS.find((k) => k.pattern.test(text));
+  if (component && action) return `${component.tag} — ${action.tag}`;
+  if (component) return component.tag;
+  if (action) return action.tag;
+  return "Other";
 }
 
 // ── Soft-time component catalog (shared by /api/soft-times + /api/overhaul-forecast) ──
@@ -367,7 +411,7 @@ async function executeQuery(
   sql: string,
   params?: any[]
 ): Promise<any> {
-  const userConn = await getUserLakebaseConnection(req);
+  const userConn = await getUserLakebaseConnection(req, appkit);
   if (userConn) {
     return userConn.query(sql, params || []);
   }
@@ -384,7 +428,7 @@ await createApp({
       // ── Health ───────────────────────────────────────────────────────
       app.get("/api/health/lakebase", async (req: Request, res: Response) => {
         try {
-          const userConn = await getUserLakebaseConnection(req);
+          const userConn = await getUserLakebaseConnection(req, appkit);
           if (userConn) {
             await userConn.query("SELECT 1");
             res.json({ connected: true, mode: "autoscaling", schema: S, auth: "user" });
@@ -559,8 +603,11 @@ await createApp({
         }
       });
 
-      // ── Per-ATA detail: top-3 defect descriptions + most recent defect ──
-      // Used to power rich hover tooltips on the Defects by ATA bar chart.
+      // ── Per-ATA detail: top-3 defect types (keyword-classified) + most
+      // recent defect. Used to power rich hover tooltips on the Defects by
+      // ATA bar chart. Grouping is done in JS by classifyDefectText() rather
+      // than exact narrative text, since free-text narratives rarely repeat
+      // verbatim (see comment on classifyDefectText above).
       app.get("/api/defects/by-ata/detail", async (req: Request, res: Response) => {
         const from = parseDateParam(req.query.from);
         const to = parseDateParam(req.query.to);
@@ -568,58 +615,50 @@ await createApp({
           const result = await executeQuery(
             req,
             appkit,
-            `WITH ata_data AS (
-               SELECT LPAD(c.chapter::text, 2, '0') || '-' || LPAD(c.section::text, 2, '0') AS ata,
-                      f.defect_description,
-                      d.calendar_date
-               FROM ${S}.qx_ppmtx_synced_gold_fact_defect f
-               JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
-               LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON f.reported_date_key = d.dim_date_key
-               WHERE c.chapter IN (${PROP_ATA_LIST})
-                 AND ($1::date IS NULL OR d.calendar_date >= $1::date)
-                 AND ($2::date IS NULL OR d.calendar_date <= $2::date)
-             ),
-             desc_counts AS (
-               SELECT ata, defect_description, COUNT(*)::int AS cnt,
-                      ROW_NUMBER() OVER (PARTITION BY ata ORDER BY COUNT(*) DESC) AS rn
-               FROM ata_data
-               WHERE defect_description IS NOT NULL AND TRIM(defect_description) <> ''
-               GROUP BY ata, defect_description
-             ),
-             top3 AS (
-               SELECT ata, defect_description, cnt, rn FROM desc_counts WHERE rn <= 3
-             ),
-             recent AS (
-               SELECT DISTINCT ON (ata) ata,
-                      defect_description AS recent_desc,
-                      calendar_date AS recent_date
-               FROM ata_data
-               ORDER BY ata, calendar_date DESC NULLS LAST
-             )
-             SELECT t.ata, t.defect_description, t.cnt, t.rn,
-                    r.recent_desc, r.recent_date::text AS recent_date
-             FROM top3 t
-             JOIN recent r ON t.ata = r.ata
-             ORDER BY t.ata, t.rn`,
+            `SELECT LPAD(c.chapter::text, 2, '0') || '-' || LPAD(c.section::text, 2, '0') AS ata,
+                    f.defect_description,
+                    d.calendar_date::text AS calendar_date
+             FROM ${S}.qx_ppmtx_synced_gold_fact_defect f
+             JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON f.reported_date_key = d.dim_date_key
+             WHERE c.chapter IN (${PROP_ATA_LIST})
+               AND ($1::date IS NULL OR d.calendar_date >= $1::date)
+               AND ($2::date IS NULL OR d.calendar_date <= $2::date)
+             ORDER BY d.calendar_date DESC NULLS LAST`,
             [from, to],
           );
-          // Aggregate rows (one per top-3 entry) into a map keyed by ATA
+
           type DetailEntry = { ata: string; top3: { desc: string; count: number }[]; recentDesc: string; recentDate: string };
-          const map = new Map<string, DetailEntry>();
+          const tagCounts = new Map<string, Map<string, number>>();
+          const recent = new Map<string, { desc: string; date: string }>();
           for (const row of result.rows) {
             const ata = row.ata as string;
-            if (!map.has(ata)) {
-              map.set(ata, {
-                ata,
-                top3: [],
-                recentDesc: (row.recent_desc as string) || "",
-                recentDate: (row.recent_date as string) || "",
-              });
+            const desc = row.defect_description as string | null;
+            if (!desc || !desc.trim()) continue;
+            const tag = classifyDefectText(desc);
+            if (!tagCounts.has(ata)) tagCounts.set(ata, new Map());
+            const counts = tagCounts.get(ata)!;
+            counts.set(tag, (counts.get(tag) ?? 0) + 1);
+            // Rows are ordered by calendar_date DESC, so the first row seen
+            // per ATA is the most recent defect.
+            if (!recent.has(ata)) {
+              recent.set(ata, { desc, date: (row.calendar_date as string) || "" });
             }
-            const entry = map.get(ata)!;
-            if (row.defect_description) {
-              entry.top3.push({ desc: row.defect_description as string, count: row.cnt as number });
-            }
+          }
+
+          const map = new Map<string, DetailEntry>();
+          for (const [ata, counts] of tagCounts) {
+            const top3 = Array.from(counts.entries())
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 3)
+              .map(([desc, count]) => ({ desc, count }));
+            const recentEntry = recent.get(ata);
+            map.set(ata, {
+              ata,
+              top3,
+              recentDesc: recentEntry?.desc ?? "",
+              recentDate: recentEntry?.date ?? "",
+            });
           }
           res.json({ data: Array.from(map.values()), source: "live" });
         } catch (err) {
@@ -669,7 +708,9 @@ await createApp({
           //  • Scrapped units (condition SCRP) are excluded from the fleet unit
           //    count; all other conditions — including BADSTOCK and U/S — are kept.
           //  • Outlier/sentinel hour values (> 2× the soft limit) are dropped from the
-          //    TSO min/avg/max stats.
+          //    TSO min/avg/max stats. Live TSO is preferred (accounts for accumulated
+          //    flight hours since last overhaul); falls back to static TSO if not yet
+          //    reconstructed.
           const unionParts = softTimeConfig.map(({ likePattern, pnList, displayName, softLimit }) => {
             const partFilter = pnList
               ? `p.pn IN (${pnList.map(pn => `'${pn.replace(/'/g, "''")}'`).join(", ")})`
@@ -684,7 +725,7 @@ await createApp({
                 AVG(CASE WHEN cs.tso_hours > 0 AND cs.tso_hours <= ${cap} THEN cs.tso_hours END)::float AS avg_tso,
                 MIN(CASE WHEN cs.tso_hours > 0 AND cs.tso_hours <= ${cap} THEN cs.tso_hours END)::int AS min_tso
               FROM (
-                SELECT cur.pn, t.tso_hours
+                SELECT cur.pn, COALESCE(plt.live_tso, t.tso_hours) AS tso_hours
                 FROM (
                   SELECT p.pn, snap.dim_part_key, snap.sn, snap.condition,
                     ROW_NUMBER() OVER (
@@ -701,6 +742,7 @@ await createApp({
                   WHERE control = 'TSO'
                   GROUP BY dim_part_key, sn
                 ) t ON t.dim_part_key = cur.dim_part_key AND t.sn = cur.sn
+                LEFT JOIN ${S}.qx_ppmtx_synced_gold_part_live_tso plt ON cur.pn = plt.pn AND cur.sn = plt.sn
                 WHERE cur.rn = 1 AND cur.condition NOT IN ('SCRP')
               ) cs`;
           });
@@ -770,6 +812,8 @@ await createApp({
           // those whose TSO is high enough that (TSO + projectedHours) reaches the
           // soft limit within the window — plus units already past the limit.
           // Sentinel/outlier hours (> 2× limit) are excluded as bad data.
+          // Live TSO is preferred (accounts for accumulated flight hours since last
+          // overhaul); falls back to static TSO if not yet reconstructed.
           const unionParts = softTimeConfig.map(({ likePattern, pnList, displayName, softLimit }) => {
             const partFilter = pnList
               ? `p.pn IN (${pnList.map(pn => `'${pn.replace(/'/g, "''")}'`).join(", ")})`
@@ -782,7 +826,7 @@ await createApp({
                 ${softLimit} AS soft_limit,
                 cs.pn, cs.sn, cs.tso_hours
               FROM (
-                SELECT cur.pn, cur.sn, t.tso_hours
+                SELECT cur.pn, cur.sn, COALESCE(plt.live_tso, t.tso_hours) AS tso_hours
                 FROM (
                   SELECT p.pn, snap.dim_part_key, snap.sn, snap.condition,
                     ROW_NUMBER() OVER (
@@ -793,12 +837,13 @@ await createApp({
                   JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON snap.dim_part_key = p.dim_part_key
                   WHERE ${partFilter}
                 ) cur
-                JOIN (
+                LEFT JOIN (
                   SELECT dim_part_key, sn, MAX(actual_hours) AS tso_hours
                   FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control
                   WHERE control = 'TSO'
                   GROUP BY dim_part_key, sn
                 ) t ON t.dim_part_key = cur.dim_part_key AND t.sn = cur.sn
+                LEFT JOIN ${S}.qx_ppmtx_synced_gold_part_live_tso plt ON cur.pn = plt.pn AND cur.sn = plt.sn
                 WHERE cur.rn = 1 AND cur.condition NOT IN ('SCRP')
               ) cs
               WHERE cs.tso_hours > 0 AND cs.tso_hours <= ${cap}
@@ -875,9 +920,11 @@ await createApp({
             appkit,
             `SELECT ic.pn, ic.sn, p.pn_description AS description,
                     ic.control, ic.actual_hours, ic.actual_cycles,
-                    ic.schedule_cycles, ic.remaining_cycles
+                    ic.schedule_cycles, ic.remaining_cycles,
+                    plt.live_tso, plt.baseline_tso_hours, plt.flight_hours_since_reset
              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
              LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_part_live_tso plt ON ic.sn = plt.sn AND ic.pn = plt.pn
              WHERE ic.dim_part_key IN (${PROP_PART_POPULATION})
              ORDER BY (ic.control = 'LL') DESC, ic.remaining_cycles ASC NULLS LAST
              LIMIT $1`,
@@ -1462,12 +1509,7 @@ await createApp({
                         AND f.defect_description IS NOT NULL
                         AND lower(f.defect_description) LIKE '%vib%'
                         AND ${inRange}
-                    )::int AS vibration_pireps,
-                    COUNT(*) FILTER (
-                      WHERE f.status = 'OPEN'
-                        AND f.defect_description IS NOT NULL
-                        AND upper(f.defect_description) LIKE '%ECMP%'
-                    )::int AS open_ecmp
+                    )::int AS vibration_pireps
              FROM ${S}.qx_ppmtx_synced_gold_fact_defect f
              JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
              LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON f.reported_date_key = d.dim_date_key
@@ -1482,8 +1524,23 @@ await createApp({
              WHERE control = 'LL' AND remaining_cycles IS NOT NULL AND remaining_cycles < 1000
                AND dim_part_key IN (${PROP_PART_POPULATION})`,
           );
+          // Real ECMP open-count, sourced from qx_ppmtx_gold_fact_engineering_order
+          // (replaces the prior narrative-text-search proxy on defect reports).
+          // Per current procedure, only "ECMP-XXXX" numbered orders past the
+          // ECMP-4500 cutover are tracked; older/legacy-named ECMPs (pre-4500,
+          // or non-conforming names) are excluded from this KPI.
+          const ecmpAgg = await executeQuery(
+            req,
+            appkit,
+            `SELECT COUNT(*)::int AS open_ecmp
+             FROM ${S}.qx_ppmtx_synced_gold_fact_engineering_order
+             WHERE upper(status) = 'OPEN' AND upper(eo_category) = 'ECMP'
+               AND eo ~ '^ECMP-[0-9]+$'
+               AND substring(eo from 6)::int > 4500`,
+          );
           const d = defectAgg.rows[0] ?? {};
           const l = llpAgg.rows[0] ?? {};
+          const e = ecmpAgg.rows[0] ?? {};
           res.json({
             data: {
               activeDefects: Number(d.active_defects) || 0,
@@ -1492,13 +1549,51 @@ await createApp({
               totalDefects: Number(d.total_defects) || 0,
               llpAlerts: Number(l.llp_alerts) || 0,
               vibrationPireps: Number(d.vibration_pireps) || 0,
-              openEcmp: Number(d.open_ecmp) || 0,
+              openEcmp: Number(e.open_ecmp) || 0,
             },
             source: "live",
           });
         } catch (err) {
           console.warn(`[Lakebase] /api/kpis fallback: ${err}`);
           res.json({ data: MOCK_KPIS, source: "mock" });
+        }
+      });
+
+      // ── ECMP detail list, backing the Overview "ECMP" KPI dropdown ─────
+      // Same ECMP-4500+ cutover filter as /api/kpis' openEcmp count. The
+      // aircraft tail is not a distinct source column — ECMP descriptions
+      // embed it inline (e.g. "N643QX #2 ENGINE..."), so it's extracted via
+      // regex here rather than added as a Gold column. Issue date is
+      // intentionally omitted: new ECMPs are copied from prior ones and
+      // inherit the original's issued_date, so it doesn't reflect reality.
+      app.get("/api/ecmp/open", async (req: Request, res: Response) => {
+        try {
+          const result = await executeQuery(
+            req,
+            appkit,
+            `SELECT f.eo,
+                    f.eo_description,
+                    COALESCE(
+                      substring(f.eo_description from '(N[0-9]{3}QX)'),
+                      'N' || substring(f.eo_description from '([0-9]{3}QX)')
+                    ) AS ac
+             FROM ${S}.qx_ppmtx_synced_gold_fact_engineering_order f
+             WHERE upper(f.status) = 'OPEN' AND upper(f.eo_category) = 'ECMP'
+               AND f.eo ~ '^ECMP-[0-9]+$'
+               AND substring(f.eo from 6)::int > 4500
+             ORDER BY substring(f.eo from 6)::int DESC`,
+          );
+          res.json({
+            data: result.rows.map((r: any) => ({
+              eo: r.eo,
+              description: r.eo_description ?? "",
+              ac: r.ac ?? "Unknown",
+            })),
+            source: "live",
+          });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/ecmp/open fallback: ${err}`);
+          res.json({ data: MOCK_ECMP_DETAILS, source: "mock" });
         }
       });
 

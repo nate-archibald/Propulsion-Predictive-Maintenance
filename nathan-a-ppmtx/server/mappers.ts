@@ -102,7 +102,7 @@ export function mapPart(r: Row): Row {
     location: "",
     tsn: num(r.actual_hours),
     csn: num(r.actual_cycles),
-    tso: 0,
+    tso: numOrNull(r.live_tso) ?? 0,
     csi: 0,
     installDate: "",
     ata: "",

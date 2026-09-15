@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment, useRef } from "react";
-import { useSearchParams, useNavigate } from "react-router";
+import { useSearchParams } from "react-router";
 import {
   Card,
   CardContent,
@@ -9,13 +9,13 @@ import {
   Skeleton,
   Button,
 } from "@databricks/appkit-ui/react";
-import { Search, Settings, AlertTriangle } from "lucide-react";
+import { Search, Settings, AlertTriangle, ChevronUp } from "lucide-react";
 import type { EngineConfig, APUConfig } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
+import { ConditionBadge, Toggle } from "../components/qx-ui";
 
 export default function EnginesPage() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const initialSearch = searchParams.get("search") ?? "";
   const [search, setSearch] = useState(initialSearch);
   const [selectedTab, setSelectedTab] = useState<"engines" | "apus">("engines");
@@ -50,10 +50,6 @@ export default function EnginesPage() {
       .then((r) => r.json())
       .then((d) => {
         setBuildUp(d.data || []);
-        // Scroll the tree into view after data loads
-        setTimeout(() => {
-          buildUpRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 100);
       })
       .catch(() => setBuildUp([]))
       .finally(() => setBuildUpLoading(false));
@@ -67,6 +63,143 @@ export default function EnginesPage() {
       return next;
     });
   };
+
+  // Collapse the inline build-up panel (deselects engine/APU)
+  const handleCollapsePanel = () => {
+    setSelectedEngine(null);
+    setSelectedAPU(null);
+  };
+
+  // Renders the installed-parts build-up panel content shared by the top and bottom collapse triggers
+  const renderBuildUpPanelBody = (position: "top" | "bottom") => (
+    <>
+      {position === "top" && (
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              {selectedEngine ? selectedEngine.engineSN : selectedAPU ? selectedAPU.apuSN : ""} — Installed Parts
+              <span className="text-xs font-normal text-muted-foreground ml-2">
+                ({buildUp.length} components
+                {buildUp.some((p) => p.children.length > 0)
+                  ? ", click chevron to expand assemblies"
+                  : ""})
+              </span>
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCollapsePanel}
+              className="gap-1"
+              data-testid="buildup-collapse-top"
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+              Collapse
+            </Button>
+          </CardTitle>
+        </CardHeader>
+      )}
+      <CardContent>
+        {buildUpLoading ? (
+          <Skeleton className="h-48 w-full" />
+        ) : buildUp.length === 0 ? (
+          <p className="text-center text-muted-foreground py-8">
+            No build-up data available.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-2.5 px-3 text-left font-medium text-muted-foreground w-8"></th>
+                  <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                    Description
+                  </th>
+                  <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                    P/N
+                  </th>
+                  <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                    S/N
+                  </th>
+                  <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                    Condition
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {buildUp.map((part) => (
+                  <Fragment key={part.sn}>
+                    {/* Level 1 row */}
+                    <tr className="border-b hover:bg-muted/30">
+                      <td className="py-2 px-3">
+                        {part.children.length > 0 && (
+                          <button
+                            onClick={() => toggleExpand(part.sn)}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            {expandedSns.has(part.sn) ? "\u25BC" : "\u25B6"}
+                          </button>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 font-medium">{part.description}</td>
+                      <td className="py-2 px-3 font-mono text-xs">{part.pn}</td>
+                      <td className="py-2 px-3 font-mono text-xs">{part.sn}</td>
+                      <td className="py-2 px-3">
+                        <ConditionBadge condition={part.condition} />
+                      </td>
+                    </tr>
+                    {/* Level 2 rows (expanded children) */}
+                    {expandedSns.has(part.sn) &&
+                      part.children.map((child) => (
+                        <tr
+                          key={child.sn}
+                          className="border-b bg-muted/10 hover:bg-muted/20"
+                        >
+                          <td className="py-1.5 px-3"></td>
+                          <td className="py-1.5 px-3 pl-8 text-muted-foreground">
+                            {child.description}
+                          </td>
+                          <td className="py-1.5 px-3 font-mono text-xs text-muted-foreground">
+                            {child.pn}
+                          </td>
+                          <td className="py-1.5 px-3 font-mono text-xs text-muted-foreground">
+                            {child.sn}
+                          </td>
+                          <td className="py-1.5 px-3">
+                            <ConditionBadge condition={child.condition} />
+                          </td>
+                        </tr>
+                      ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!buildUpLoading && buildUp.length > 0 && (
+          <div className="flex justify-center pt-3 mt-2 border-t">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCollapsePanel}
+              className="gap-1"
+              data-testid="buildup-collapse-bottom"
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+              Collapse
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </>
+  );
+
+  // Full-width inline panel inserted directly after the selected card within the grid flow
+  const buildUpPanel = (selectedEngine || selectedAPU) ? (
+    <div style={{ gridColumn: "1 / -1" }} ref={buildUpRef} data-testid="engine-buildup-panel">
+      <Card>{renderBuildUpPanelBody("top")}</Card>
+    </div>
+  ) : null;
 
   const { data: engines, source: enginesSource } = useLakebaseData<EngineConfig>("/api/engines");
   const { data: apus, source: apusSource } = useLakebaseData<APUConfig>("/api/apus");
@@ -94,8 +227,6 @@ export default function EnginesPage() {
     }
   });
 
-  if (loading) return <Skeleton className="h-96 w-full" />;
-
   return (
     <div className="space-y-6" data-testid="engines-page">
       <div>
@@ -110,26 +241,21 @@ export default function EnginesPage() {
             Full configuration and history by {selectedTab === "engines" ? "Engine" : "APU"} S/N
           </p>
           <div className="flex gap-2">
-            <Button
-              variant={selectedTab === "engines" ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setSelectedTab("engines");
-                setSelectedAPU(null);
+            <Toggle
+              checked={selectedTab === "apus"}
+              onChange={(checked) => {
+                if (checked) {
+                  setSelectedTab("apus");
+                  setSelectedEngine(null);
+                } else {
+                  setSelectedTab("engines");
+                  setSelectedAPU(null);
+                }
               }}
-            >
-              Engines
-            </Button>
-            <Button
-              variant={selectedTab === "apus" ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setSelectedTab("apus");
-                setSelectedEngine(null);
-              }}
-            >
-              APUs
-            </Button>
+              leftLabel="Engines"
+              rightLabel="APUs"
+              aria-label="Engine & APU genealogy tab"
+            />
           </div>
         </div>
       </div>
@@ -147,7 +273,9 @@ export default function EnginesPage() {
         />
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <Skeleton className="h-96 w-full" />
+      ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             No {selectedTab === "engines" ? "engines" : "APUs"} match your search.
@@ -166,319 +294,117 @@ export default function EnginesPage() {
                     p.cyclesRemaining !== null &&
                     p.cyclesRemaining < 1000
                 ).length;
+                const isSelected = selectedEngine?.engineSN === engine.engineSN;
                 return (
-                  <Card
-                    key={engine.engineSN}
-                    className={`cursor-pointer transition-all hover:shadow-md ${selectedEngine?.engineSN === engine.engineSN ? "ring-2 ring-accent" : ""}`}
-                    onClick={() => setSelectedEngine(engine)}
-                    role="link"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ")
-                        setSelectedEngine(engine);
-                    }}
-                  >
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center justify-between">
-                        <span className="flex items-center gap-2">
-                          <Settings className="h-4 w-4" />
-                          <span className="font-mono">{engine.engineSN}</span>
-                        </span>
-                        {llpCount > 0 && (
-                          <span className="flex items-center gap-1 text-destructive text-xs">
-                            <AlertTriangle className="h-3 w-3" />
-                            {llpCount} LLP
+                  <Fragment key={engine.engineSN}>
+                    <Card
+                      className={`cursor-pointer transition-all hover:shadow-md ${isSelected ? "ring-2 ring-accent" : ""}`}
+                      onClick={() => setSelectedEngine(engine)}
+                      role="link"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ")
+                          setSelectedEngine(engine);
+                      }}
+                    >
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center justify-between">
+                          <span className="flex items-center gap-2">
+                            <Settings className="h-4 w-4" />
+                            <span className="font-mono">{engine.engineSN}</span>
                           </span>
-                        )}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-xs space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <p className="text-muted-foreground">Tail</p>
-                          <p className="font-medium">{engine.tail}</p>
+                          {llpCount > 0 && (
+                            <span className="flex items-center gap-1 text-destructive text-xs">
+                              <AlertTriangle className="h-3 w-3" />
+                              {llpCount} LLP
+                            </span>
+                          )}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="text-xs space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-muted-foreground">Tail</p>
+                            <p className="font-medium">{engine.tail}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Position</p>
+                            <p className="font-medium">{engine.position}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Hours</p>
+                            <p className="font-medium">
+                              {engine.totalHours.toLocaleString()}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Cycles</p>
+                            <p className="font-medium">
+                              {engine.totalCycles.toLocaleString()}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Position</p>
-                          <p className="font-medium">{engine.position}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Hours</p>
-                          <p className="font-medium">
-                            {engine.totalHours.toLocaleString()}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Cycles</p>
-                          <p className="font-medium">
-                            {engine.totalCycles.toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="text-muted-foreground">
-                        Last shop visit: {engine.lastShopVisit}
-                      </p>
-                    </CardContent>
-                  </Card>
+                        <p className="text-muted-foreground">
+                          Last shop visit: {engine.lastShopVisit}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    {isSelected && buildUpPanel}
+                  </Fragment>
                 );
               })
             ) : (
               filtered.map((apu: any) => {
                 const apuItem = apu as APUConfig;
+                const isSelected = selectedAPU?.apuSN === apuItem.apuSN;
                 return (
-                  <Card
-                    key={apuItem.apuSN}
-                    className={`cursor-pointer transition-all hover:shadow-md ${selectedAPU?.apuSN === apuItem.apuSN ? "ring-2 ring-accent" : ""}`}
-                    onClick={() => setSelectedAPU(apuItem)}
-                    role="link"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ")
-                        setSelectedAPU(apuItem);
-                    }}
-                  >
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Settings className="h-4 w-4" />
-                        <span className="font-mono">{apuItem.apuSN}</span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-xs space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <p className="text-muted-foreground">Tail</p>
-                          <p className="font-medium">{apuItem.tail}</p>
+                  <Fragment key={apuItem.apuSN}>
+                    <Card
+                      className={`cursor-pointer transition-all hover:shadow-md ${isSelected ? "ring-2 ring-accent" : ""}`}
+                      onClick={() => setSelectedAPU(apuItem)}
+                      role="link"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ")
+                          setSelectedAPU(apuItem);
+                      }}
+                    >
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Settings className="h-4 w-4" />
+                          <span className="font-mono">{apuItem.apuSN}</span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="text-xs space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-muted-foreground">Tail</p>
+                            <p className="font-medium">{apuItem.tail}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Hours</p>
+                            <p className="font-medium">
+                              {apuItem.totalHours.toLocaleString()}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Cycles</p>
+                            <p className="font-medium">
+                              {apuItem.totalCycles.toLocaleString()}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Hours</p>
-                          <p className="font-medium">
-                            {apuItem.totalHours.toLocaleString()}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Cycles</p>
-                          <p className="font-medium">
-                            {apuItem.totalCycles.toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="text-muted-foreground">
-                        Last shop visit: {apuItem.lastShopVisit}
-                      </p>
-                    </CardContent>
-                  </Card>
+                        <p className="text-muted-foreground">
+                          Last shop visit: {apuItem.lastShopVisit}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    {isSelected && buildUpPanel}
+                  </Fragment>
                 );
               })
             )}
           </div>
-
-          {/* Build-up tree: Installed parts hierarchy */}
-          {(selectedEngine || selectedAPU) && (
-            <div ref={buildUpRef}>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Settings className="h-4 w-4" />
-                    {selectedEngine ? selectedEngine.engineSN : selectedAPU!.apuSN} — Installed Parts
-                    <span className="text-xs font-normal text-muted-foreground ml-2">
-                      ({buildUp.length} components
-                      {buildUp.some((p) => p.children.length > 0)
-                        ? ", click chevron to expand assemblies"
-                        : ""})
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-              <CardContent>
-                {buildUpLoading ? (
-                  <Skeleton className="h-48 w-full" />
-                ) : buildUp.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">
-                    No build-up data available.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-muted/50">
-                          <th className="py-2.5 px-3 text-left font-medium text-muted-foreground w-8"></th>
-                          <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                            Description
-                          </th>
-                          <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                            P/N
-                          </th>
-                          <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                            S/N
-                          </th>
-                          <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                            Condition
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {buildUp.map((part) => (
-                          <Fragment key={part.sn}>
-                            {/* Level 1 row */}
-                            <tr className="border-b hover:bg-muted/30">
-                              <td className="py-2 px-3">
-                                {part.children.length > 0 && (
-                                  <button
-                                    onClick={() => toggleExpand(part.sn)}
-                                    className="text-muted-foreground hover:text-foreground"
-                                  >
-                                    {expandedSns.has(part.sn) ? "\u25BC" : "\u25B6"}
-                                  </button>
-                                )}
-                              </td>
-                              <td className="py-2 px-3 font-medium">{part.description}</td>
-                              <td className="py-2 px-3 font-mono text-xs">{part.pn}</td>
-                              <td className="py-2 px-3 font-mono text-xs">{part.sn}</td>
-                              <td className="py-2 px-3">
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
-                                  {part.condition}
-                                </span>
-                              </td>
-                            </tr>
-                            {/* Level 2 rows (expanded children) */}
-                            {expandedSns.has(part.sn) &&
-                              part.children.map((child) => (
-                                <tr
-                                  key={child.sn}
-                                  className="border-b bg-muted/10 hover:bg-muted/20"
-                                >
-                                  <td className="py-1.5 px-3"></td>
-                                  <td className="py-1.5 px-3 pl-8 text-muted-foreground">
-                                    {child.description}
-                                  </td>
-                                  <td className="py-1.5 px-3 font-mono text-xs text-muted-foreground">
-                                    {child.pn}
-                                  </td>
-                                  <td className="py-1.5 px-3 font-mono text-xs text-muted-foreground">
-                                    {child.sn}
-                                  </td>
-                                  <td className="py-1.5 px-3">
-                                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted/50">
-                                      {child.condition}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                          </Fragment>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            </div>
-          )}
-
-          {/* Selected engine detail */}
-          {selectedEngine && (
-            <Card data-testid="engine-detail">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Settings className="h-4 w-4" />
-                  {selectedEngine.engineSN} — Life-Limited Parts (LLP Tracking)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          Part
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          P/N
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          S/N
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          Position
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          TSI
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          CSI
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          Installed
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          LLP Status
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedEngine.parts.map((p) => (
-                        <tr
-                          key={p.serialNumber}
-                          className="border-b last:border-0 cursor-pointer hover:bg-muted/50"
-                          onClick={() =>
-                            navigate(
-                              `/parts?search=${encodeURIComponent(p.serialNumber)}`
-                            )
-                          }
-                          role="link"
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ")
-                              navigate(
-                                `/parts?search=${encodeURIComponent(p.serialNumber)}`
-                              );
-                          }}
-                        >
-                          <td className="py-2 px-3">{p.description}</td>
-                          <td className="py-2 px-3 font-mono text-xs">
-                            {p.partNumber}
-                          </td>
-                          <td className="py-2 px-3 font-mono text-xs">
-                            {p.serialNumber}
-                          </td>
-                          <td className="py-2 px-3">{p.position}</td>
-                          <td className="py-2 px-3">
-                            {p.tso.toLocaleString()} hrs
-                          </td>
-                          <td className="py-2 px-3">
-                            {p.csi.toLocaleString()} cyc
-                          </td>
-                          <td className="py-2 px-3">{p.installDate}</td>
-                          <td className="py-2 px-3">
-                            {p.isLLP ? (
-                              <span
-                                className={`text-xs font-semibold ${(p.cyclesRemaining ?? Infinity) < 1000 ? "text-destructive" : "text-[var(--success)]"}`}
-                              >
-                                {p.cyclesRemaining?.toLocaleString()} /{" "}
-                                {p.cycleLimit?.toLocaleString()}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                      {selectedEngine.parts.length === 0 && (
-                        <tr>
-                          <td
-                            colSpan={8}
-                            className="py-4 text-center text-muted-foreground"
-                          >
-                            No parts tracked for this engine
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Selected APU detail */}
           {selectedAPU && (
             <Card data-testid="apu-detail">

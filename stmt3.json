@@ -1,0 +1,5 @@
+{
+    "wait_timeout":  "50s",
+    "warehouse_id":  "600d6ad41356867b",
+    "statement":  "CREATE OR REPLACE MATERIALIZED VIEW subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_engineering_order CLUSTER BY AUTO REFRESH POLICY INCREMENTAL SCHEDULE CRON \u00270 0 7 * * ?\u0027 AT TIME ZONE \u0027UTC\u0027 AS SELECT * FROM subject_maintenanceengineering.ds_maintenanceengineering_ods.qx_trax_engineering_order"
+}

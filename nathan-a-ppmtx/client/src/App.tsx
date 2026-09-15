@@ -29,10 +29,10 @@ const NAV_ITEMS = [
 ];
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `px-3 py-1.5 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-1.5 ${
+  `px-3 py-1.5 border-b-2 text-sm font-medium transition-colors inline-flex items-center gap-1.5 ${
     isActive
-      ? 'bg-primary text-primary-foreground'
-      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+      ? 'border-accent text-primary-foreground bg-white/10'
+      : 'border-transparent text-primary-foreground/60 hover:text-primary-foreground hover:bg-white/5'
   }`;
 
 const mobileNavLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -89,6 +89,23 @@ function ThemeToggle() {
   );
 }
 
+function UtcClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const hh = String(now.getUTCHours()).padStart(2, '0');
+  const mm = String(now.getUTCMinutes()).padStart(2, '0');
+  const ss = String(now.getUTCSeconds()).padStart(2, '0');
+  return (
+    <span className="hidden md:inline-flex items-center gap-1.5 text-xs font-technical text-primary-foreground/70" data-testid="utc-clock">
+      <span className="tabular-nums">{hh}:{mm}:{ss}</span>
+      <span className="opacity-70">UTC</span>
+    </span>
+  );
+}
+
 function NavLinks({ className, linkClass, onClick }: { className?: string; linkClass: NavLinkClassFn; onClick?: () => void }) {
   return (
     <nav className={className}>
@@ -122,9 +139,10 @@ function Layout() {
         <NavLinks className="hidden md:flex gap-1" linkClass={navLinkClass} />
         {/* Right-aligned controls: theme toggle (always), info (desktop), menu (mobile) */}
         <div className="ml-auto flex items-center gap-2 md:gap-3">
+          <UtcClock />
           <ThemeToggle />
           <span className="hidden md:block text-xs opacity-70">
-            Horizon Air — E175 / CF34-8E
+            E175 / CF34-8E
           </span>
           {/* Mobile nav — visible below md breakpoint */}
           <div className="md:hidden">
@@ -148,9 +166,8 @@ function Layout() {
         <Outlet />
       </main>
 
-      <footer className="border-t px-4 md:px-6 py-3 text-xs text-muted-foreground flex items-center justify-between">
+      <footer className="border-t px-4 md:px-6 py-3 text-xs text-muted-foreground">
         <span>QX Predictive Maintenance — Domain 1: Propulsion Parts & Defects Intelligence</span>
-        <span>Alaska Air Group</span>
       </footer>
     </div>
   );

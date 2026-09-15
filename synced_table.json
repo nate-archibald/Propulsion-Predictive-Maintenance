@@ -1,0 +1,11 @@
+{
+    "spec":  {
+                 "branch":  "projects/nathan-a-ppmtx/branches/production",
+                 "postgres_database":  "databricks_postgres",
+                 "primary_key_columns":  [
+                                             "fact_engineering_order_key"
+                                         ],
+                 "source_table_full_name":  "subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_gold_fact_engineering_order",
+                 "scheduling_policy":  "TRIGGERED"
+             }
+}

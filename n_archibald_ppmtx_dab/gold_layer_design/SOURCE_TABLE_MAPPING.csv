@@ -8,6 +8,7 @@ qx_ppmtx_pn_inventory_detail,INCLUDED,qx_ppmtx_gold_fact_inventory_snapshot,inve
 qx_ppmtx_pn_inventory_control,INCLUDED,qx_ppmtx_gold_fact_inventory_control,inventory_spares,Maintenance schedule limits - LLP red-line tracking (FR-7),1
 qx_ppmtx_order_detail,INCLUDED,qx_ppmtx_gold_fact_order,procurement_overhaul,Procurement orders - lead time analysis and order fulfillment,1
 qx_ppmtx_pn_tear_down_report,INCLUDED,qx_ppmtx_gold_fact_teardown,procurement_overhaul,Shop findings - root cause analysis and fault confirmation rates,1
+qx_ppmtx_engineering_order,INCLUDED,qx_ppmtx_gold_fact_engineering_order,engineering_orders,Engineering order/EC tracking - powers the Overview 'ECMP' open-count KPI (previously a narrative text-search proxy on defect reports),2
 qx_ppmtx_dq_orphaned_defect_pn,EXCLUDED,,data_quality,Internal DQ monitoring table - not relevant for business analytics. Used for Silver pipeline health checks only.,N/A
 qx_ppmtx_dq_orphaned_inventory,EXCLUDED,,data_quality,Internal DQ monitoring table - referential integrity check for Silver pipeline operations.,N/A
 qx_ppmtx_dq_record_counts,EXCLUDED,,data_quality,Record count monitoring - operational metadata not needed in Gold analytical model.,N/A

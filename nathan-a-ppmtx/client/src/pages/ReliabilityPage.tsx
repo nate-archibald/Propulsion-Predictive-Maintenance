@@ -8,7 +8,6 @@ import {
   LineChart,
 } from "@databricks/appkit-ui/react";
 import {
-  TrendingUp,
   Clock,
   Plane,
   AlertTriangle,
@@ -16,34 +15,13 @@ import {
   Wrench,
 } from "lucide-react";
 import {
-  DEFECTS_BY_ATA,
   WEEKLY_DEFECT_TREND,
   IMPACT_BY_PN,
   LINKAGE_STATS,
 } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
+import { KpiCard } from "../components/qx-ui";
 
-function StatBox({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string;
-  value: string | number;
-  icon: React.ElementType;
-}) {
-  return (
-    <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-      <div className="rounded-md p-2 bg-primary/10">
-        <Icon className="h-4 w-4 text-primary" />
-      </div>
-      <div>
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-lg font-bold">{value}</p>
-      </div>
-    </div>
-  );
-}
 
 export default function ReliabilityPage() {
   const { data: kpiRows, source } = useLakebaseData<{
@@ -53,28 +31,18 @@ export default function ReliabilityPage() {
     totalDefects: number;
     llpAlerts: number;
   }>("/api/kpis");
-  const { data: byAta } = useLakebaseData<{
-    ata: string;
-    description: string;
-    count: number;
-    delayMinutes: number;
-    cancels: number;
-  }>("/api/defects/by-ata");
   const { data: trend } = useLakebaseData<{ week: string; count: number }>(
     "/api/defects/weekly-trend"
   );
 
   const loading = source === "loading";
   const kpi = kpiRows[0];
-  const ataData = byAta.length > 0 ? byAta : DEFECTS_BY_ATA;
   const trendData = trend.length > 0 ? trend : WEEKLY_DEFECT_TREND;
 
   const totalDefects = kpi?.totalDefects ?? 0;
   const totalDelayMin = kpi?.totalDelayMinutes ?? 0;
   const cancelCount = kpi?.cancelCount ?? 0;
   const llpAlertCount = kpi?.llpAlerts ?? 0;
-
-  if (loading) return <Skeleton className="h-96 w-full" />;
 
   return (
     <div className="space-y-6" data-testid="reliability-page">
@@ -90,45 +58,27 @@ export default function ReliabilityPage() {
         </p>
       </div>
 
+      {loading ? (
+        <Skeleton className="h-96 w-full" />
+      ) : (
+        <>
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatBox
-          label="Total Defects"
+        <KpiCard
+          title="Total Defects"
           value={totalDefects}
+          unit="reports"
           icon={AlertTriangle}
+          variant="warning"
+          dense
         />
-        <StatBox label="Total Delay Minutes" value={totalDelayMin} icon={Clock} />
-        <StatBox label="Cancellations" value={cancelCount} icon={Plane} />
-        <StatBox label="LLP Alerts" value={llpAlertCount} icon={AlertTriangle} />
+        <KpiCard title="Total Delay Minutes" value={totalDelayMin} unit="min" icon={Clock} variant="destructive" dense />
+        <KpiCard title="Cancellations" value={cancelCount} unit="flights" icon={Plane} variant="destructive" dense />
+        <KpiCard title="LLP Alerts" value={llpAlertCount} unit="parts" icon={AlertTriangle} variant="warning" dense />
       </div>
 
-      {/* Top 10 charts */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Top ATA by delay minutes */}
-        <Card data-testid="top-ata-delay">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Top ATA Sections by Delay Minutes
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BarChart
-              data={[...ataData]
-                .sort((a, b) => b.delayMinutes - a.delayMinutes)
-                .slice(0, 10)
-                .map((d) => ({
-                  ata: `${d.ata} ${d.description}`,
-                  minutes: d.delayMinutes,
-                }))}
-              xKey="ata"
-              yKey="minutes"
-              height={280}
-              colors={["var(--chart-3)"]}
-            />
-          </CardContent>
-        </Card>
-
+      {/* Top 10: cancellation impact by part */}
+      <div>
         {/* Top P/N by cancellations */}
         <Card data-testid="top-pn-cancels">
           <CardHeader className="pb-2">
@@ -241,6 +191,8 @@ export default function ReliabilityPage() {
           </CardContent>
         </Card>
       </div>
+        </>
+      )}
     </div>
   );
 }

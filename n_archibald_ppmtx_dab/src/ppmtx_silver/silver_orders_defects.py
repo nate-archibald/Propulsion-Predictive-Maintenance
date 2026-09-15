@@ -134,3 +134,30 @@ def qx_ppmtx_defect_report_pn():
         get_bronze_table("qx_trax_defect_report_pn")
         .withColumn("processed_timestamp", F.current_timestamp())
     )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## qx_ppmtx_engineering_order (Engineering Orders)
+
+# COMMAND ----------
+
+@dlt.table(
+    name="qx_ppmtx_engineering_order",
+    comment="Silver engineering orders - validated EO/EC records (mandatory service bulletins, ECMP task cards, etc.)",
+    table_properties={
+        "delta.enableChangeDataFeed": "true",
+        "delta.enableRowTracking": "true",
+        "delta.autoOptimize.optimizeWrite": "true",
+        "delta.autoOptimize.autoCompact": "true",
+        "quality": "silver",
+    },
+    cluster_by_auto=True,
+)
+@dlt.expect_all_or_drop(get_critical_rules_for_table("qx_ppmtx_engineering_order"))
+@dlt.expect_all(get_warning_rules_for_table("qx_ppmtx_engineering_order"))
+def qx_ppmtx_engineering_order():
+    return (
+        get_bronze_table("qx_trax_engineering_order")
+        .withColumn("processed_timestamp", F.current_timestamp())
+    )

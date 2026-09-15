@@ -125,6 +125,15 @@ rules_data = [
     ("qx_ppmtx_defect_report_pn", "defect_item_not_null", "defect_item IS NOT NULL", "CRITICAL", "Defect item must not be null", True, now, now),
     ("qx_ppmtx_defect_report_pn", "pn_not_null", "pn IS NOT NULL", "WARNING", "Part number should be populated", True, now, now),
     ("qx_ppmtx_defect_report_pn", "qty_non_negative", "qty IS NULL OR qty >= 0", "WARNING", "Quantity should be non-negative", True, now, now),
+
+    # === qx_ppmtx_engineering_order (Fact - Engineering Orders) ===
+    ("qx_ppmtx_engineering_order", "eo_not_null", "eo IS NOT NULL", "CRITICAL", "Engineering order number must not be null", True, now, now),
+    ("qx_ppmtx_engineering_order", "eo_not_empty", "LENGTH(TRIM(eo)) > 0", "CRITICAL", "Engineering order number must not be empty", True, now, now),
+    ("qx_ppmtx_engineering_order", "eo_category_not_null", "eo_category IS NOT NULL", "WARNING", "EO category should be populated for KPI classification (e.g., ECMP)", True, now, now),
+    ("qx_ppmtx_engineering_order", "status_not_null", "status IS NOT NULL", "WARNING", "Status should be populated", True, now, now),
+    ("qx_ppmtx_engineering_order", "schedule_hours_non_negative", "schedule_hours IS NULL OR schedule_hours >= 0", "WARNING", "Schedule hours should be non-negative", True, now, now),
+    ("qx_ppmtx_engineering_order", "schedule_cycles_non_negative", "schedule_cycles IS NULL OR schedule_cycles >= 0", "WARNING", "Schedule cycles should be non-negative", True, now, now),
+    ("qx_ppmtx_engineering_order", "schedule_days_non_negative", "schedule_days IS NULL OR schedule_days >= 0", "WARNING", "Schedule days should be non-negative", True, now, now),
 ]
 
 schema = StructType([

@@ -11,36 +11,7 @@ import {
 import { Search, ArrowUpDown } from "lucide-react";
 import type { Defect } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
-
-function ConfidenceBadge({ level }: { level: string }) {
-  const styles: Record<string, string> = {
-    HIGH: "bg-[var(--success)] text-[var(--success-foreground)]",
-    MEDIUM: "bg-[var(--warning)] text-[var(--warning-foreground)]",
-    LOW: "bg-destructive text-destructive-foreground",
-  };
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${styles[level] ?? "bg-muted text-muted-foreground"}`}
-    >
-      {level}
-    </span>
-  );
-}
-
-function ImpactBadge({ impact }: { impact: string }) {
-  const styles: Record<string, string> = {
-    CANCEL: "bg-destructive text-destructive-foreground",
-    DELAY: "bg-[var(--warning)] text-[var(--warning-foreground)]",
-    NONE: "bg-muted text-muted-foreground",
-  };
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${styles[impact] ?? "bg-muted text-muted-foreground"}`}
-    >
-      {impact}
-    </span>
-  );
-}
+import { ConfidenceBadge, ImpactBadge } from "../components/qx-ui";
 
 export default function DefectsPage() {
   const [searchParams] = useSearchParams();
@@ -77,8 +48,6 @@ export default function DefectsPage() {
     }
   };
 
-  if (loading) return <Skeleton className="h-96 w-full" />;
-
   return (
     <div className="space-y-6" data-testid="defects-page">
       <div>
@@ -107,7 +76,9 @@ export default function DefectsPage() {
       </div>
 
       {/* Results */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <Skeleton className="h-96 w-full" />
+      ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             No defects match your search.
@@ -128,10 +99,10 @@ export default function DefectsPage() {
                             ["id", "Defect ID"],
                             ["tail", "Tail"],
                             ["ata", "ATA"],
-                            ["station", "Stn"],
+                            ["station", "Station"],
                             ["date", "Date"],
                             ["impact", "Impact"],
-                            ["confidence", "Link"],
+                            ["confidence", "Linkage"],
                           ] as Array<[keyof Defect, string]>
                         ).map(([field, label]) => (
                           <th

@@ -11,6 +11,7 @@ import {
 import { Search, Package, ArrowRight, Clock, CalendarClock, AlertTriangle } from "lucide-react";
 import type { Part } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
+import { ConditionBadge } from "../components/qx-ui";
 
 interface SoftTimeRow {
   displayName: string;
@@ -45,9 +46,9 @@ function SoftTimesTable() {
                 <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">Part Number(s)</th>
                 <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Soft Limit (hrs)</th>
                 <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Fleet Units</th>
-                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Min TSO</th>
-                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Avg TSO</th>
-                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Max TSO</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground" title="Time Since Overhaul (flight hours)">Min TSO</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground" title="Time Since Overhaul (flight hours)">Avg TSO</th>
+                <th className="py-2.5 px-3 text-right font-medium text-muted-foreground" title="Time Since Overhaul (flight hours)">Max TSO</th>
                 <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">Utilization</th>
               </tr>
             </thead>
@@ -55,7 +56,7 @@ function SoftTimesTable() {
               {data.map((row) => {
                 const pct = row.softLimit > 0 ? Math.min(100, Math.round((row.maxTso / row.softLimit) * 100)) : 0;
                 const barColor =
-                  pct >= 90 ? "bg-destructive" :
+                  pct >= 90 ? "bg-destructive/50" :
                   pct >= 75 ? "bg-[var(--warning)]" :
                   "bg-[var(--success)]";
                 return (
@@ -66,7 +67,7 @@ function SoftTimesTable() {
                     <td className="py-2 px-3 text-right text-muted-foreground">{row.unitCount > 0 ? row.unitCount : "—"}</td>
                     <td className="py-2 px-3 text-right font-mono text-xs">{row.minTso > 0 ? row.minTso.toLocaleString() : "—"}</td>
                     <td className="py-2 px-3 text-right font-mono text-xs">{row.avgTso > 0 ? row.avgTso.toLocaleString() : "—"}</td>
-                    <td className={`py-2 px-3 text-right font-mono text-xs font-semibold ${pct >= 90 ? "text-destructive" : pct >= 75 ? "text-[var(--warning)]" : ""}`}>
+                    <td className={`py-2 px-3 text-right font-mono text-xs font-semibold ${pct >= 90 ? "text-destructive/70" : pct >= 75 ? "text-[var(--warning)]" : ""}`}>
                       {row.maxTso > 0 ? row.maxTso.toLocaleString() : "—"}
                     </td>
                     <td className="py-2 px-3">
@@ -193,7 +194,7 @@ function OverhaulForecast() {
                 </div>
               </div>
               <div className={`rounded-lg border p-3 ${totalOverdue > 0 ? "border-destructive/40" : ""}`}>
-                <div className={`text-2xl font-bold flex items-center gap-1.5 ${totalOverdue > 0 ? "text-destructive" : ""}`}>
+                <div className={`text-2xl font-bold flex items-center gap-1.5 ${totalOverdue > 0 ? "text-destructive/70" : ""}`}>
                   {totalOverdue > 0 && <AlertTriangle className="h-5 w-5" />}
                   {totalOverdue}
                 </div>
@@ -208,8 +209,8 @@ function OverhaulForecast() {
                   <tr className="border-b bg-muted/50">
                     <th className="py-2 px-3 text-left font-medium text-muted-foreground">Component</th>
                     <th className="py-2 px-3 text-right font-medium text-muted-foreground">Soft Limit (hrs)</th>
-                    <th className="py-2 px-3 text-right font-medium text-muted-foreground">Due in {windowLabel}</th>
-                    <th className="py-2 px-3 text-right font-medium text-muted-foreground">Already Overdue</th>
+                    <th className="py-2 px-3 text-right font-medium text-muted-foreground">Limit reached in {windowLabel}</th>
+                    <th className="py-2 px-3 text-right font-medium text-muted-foreground">Soft Limit Surpassed</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -218,7 +219,7 @@ function OverhaulForecast() {
                       <td className="py-2 px-3 font-medium">{g.displayName}</td>
                       <td className="py-2 px-3 text-right font-mono text-xs">{g.softLimit.toLocaleString()}</td>
                       <td className="py-2 px-3 text-right font-semibold">{g.dueInWindow > 0 ? g.dueInWindow : "—"}</td>
-                      <td className={`py-2 px-3 text-right font-semibold ${g.alreadyDue > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                      <td className={`py-2 px-3 text-right font-semibold ${g.alreadyDue > 0 ? "text-destructive/70" : "text-muted-foreground"}`}>
                         {g.alreadyDue > 0 ? g.alreadyDue : "—"}
                       </td>
                     </tr>
@@ -240,7 +241,7 @@ function OverhaulForecast() {
                         <th className="py-2 px-3 text-left font-medium text-muted-foreground">Component</th>
                         <th className="py-2 px-3 text-left font-medium text-muted-foreground">P/N</th>
                         <th className="py-2 px-3 text-left font-medium text-muted-foreground">S/N</th>
-                        <th className="py-2 px-3 text-right font-medium text-muted-foreground">TSO (hrs)</th>
+                        <th className="py-2 px-3 text-right font-medium text-muted-foreground" title="Time Since Overhaul (flight hours)">TSO (hrs)</th>
                         <th className="py-2 px-3 text-right font-medium text-muted-foreground">Hrs Remaining</th>
                         <th className="py-2 px-3 text-left font-medium text-muted-foreground">Est. Limit Date</th>
                       </tr>
@@ -252,12 +253,12 @@ function OverhaulForecast() {
                           <td className="py-1.5 px-3 font-mono text-xs">{u.pn}</td>
                           <td className="py-1.5 px-3 font-mono text-xs">{u.sn}</td>
                           <td className="py-1.5 px-3 text-right font-mono text-xs">{u.tso.toLocaleString()}</td>
-                          <td className={`py-1.5 px-3 text-right font-mono text-xs ${u.status === "overdue" ? "text-destructive font-semibold" : ""}`}>
+                          <td className={`py-1.5 px-3 text-right font-mono text-xs ${u.status === "overdue" ? "text-destructive/70 font-semibold" : ""}`}>
                             {u.hoursRemaining.toLocaleString()}
                           </td>
                           <td className="py-1.5 px-3 text-xs">
                             {u.status === "overdue" ? (
-                              <span className="text-destructive font-medium">Overdue</span>
+                              <span className="text-destructive/70 font-medium">Past Limit</span>
                             ) : (
                               u.projectedCrossDate
                             )}
@@ -273,23 +274,6 @@ function OverhaulForecast() {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function ConditionBadge({ condition }: { condition: string }) {
-  const styles: Record<string, string> = {
-    SVC: "bg-[var(--success)] text-[var(--success-foreground)]",
-    UNS: "bg-[var(--warning)] text-[var(--warning-foreground)]",
-    SCR: "bg-muted text-muted-foreground",
-    AOG: "bg-destructive text-destructive-foreground",
-    "IN-SHOP": "bg-accent text-accent-foreground",
-  };
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${styles[condition] ?? "bg-muted text-muted-foreground"}`}
-    >
-      {condition}
-    </span>
   );
 }
 
@@ -313,8 +297,6 @@ export default function PartsPage() {
     );
   });
 
-  if (loading) return <Skeleton className="h-96 w-full" />;
-
   return (
     <div className="space-y-6" data-testid="parts-page">
       <div>
@@ -335,7 +317,7 @@ export default function PartsPage() {
       {/* Overhaul Budget Forecast */}
       <OverhaulForecast />
 
-      {/* Search */}
+      {/* Search — scopes only the parts table below */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
@@ -348,7 +330,9 @@ export default function PartsPage() {
         />
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <Skeleton className="h-96 w-full" />
+      ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             No parts match your search.
@@ -379,10 +363,10 @@ export default function PartsPage() {
                         <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
                           Condition
                         </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground" title="Cycles Since New">
                           CSN
                         </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground" title="Life-Limited Part status">
                           LLP
                         </th>
                       </tr>

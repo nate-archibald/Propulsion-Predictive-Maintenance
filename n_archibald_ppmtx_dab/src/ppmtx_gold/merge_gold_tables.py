@@ -994,6 +994,100 @@ def merge_engine_live_times():
 
 # COMMAND ----------
 
+def merge_part_live_tso():
+    """Reconstruct LIVE part TSO (Time Since Overhaul) from bronze prod flight log +
+    component transaction history. TSO is anchored on the reset_date (last overhaul)
+    rather than first install, and accumulates airframe flight hours since that date.
+    This gives the current accumulated hours since the last overhaul, accounting for
+    flight hours that have not yet been posted back to the ERP.
+    Full-refresh via INSERT OVERWRITE to preserve PRIMARY KEY and CDF for Lakebase sync."""
+    target_table = get_gold_table("qx_ppmtx_gold_part_live_tso")
+    txn = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_pn_transaction_history"
+    flt = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_actual_flights"
+    inv = f"{catalog}.{schema}.qx_ppmtx_gold_fact_inventory_control"
+
+    print(f"Merging: {target_table}")
+
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {target_table} (
+            pn STRING,
+            sn STRING NOT NULL,
+            reset_date DATE,
+            baseline_tso_hours INT,
+            flight_hours_since_reset INT,
+            live_tso INT,
+            on_wing_periods INT,
+            as_of_date DATE,
+            computed_at TIMESTAMP,
+            CONSTRAINT pk_part_live_tso PRIMARY KEY (sn, pn)
+        ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
+    """)
+
+    spark.sql(f"""
+        INSERT OVERWRITE TABLE {target_table}
+        WITH inv_baseline AS (
+          -- Get the baseline TSO hours and reset date for each part SN
+          SELECT sn, pn, actual_hours AS baseline_tso_hours,
+                 CAST(COALESCE(d.calendar_date, CURRENT_DATE()) AS DATE) AS reset_date
+          FROM {inv} ic
+          LEFT JOIN {catalog}.{schema}.qx_ppmtx_gold_dim_date d 
+            ON ic.reset_date_key = d.dim_date_key
+          WHERE ic.control = 'TSO' AND sn IS NOT NULL
+        ),
+        ev AS (
+          -- Transactions for this part SN: mark INSTALL/INT/INST as START, REMOVE as END
+          SELECT DISTINCT sn, pn, ac,
+            CASE WHEN transaction_type='REMOVE' THEN 'END' ELSE 'START' END AS kind,
+            CAST(transaction_date AS DATE) AS d
+          FROM {txn}
+          WHERE sn IS NOT NULL AND ac IS NOT NULL
+        ),
+        ordered AS (
+          -- Next event per SN defines the end of each on-wing window
+          SELECT sn, pn, ac, kind, d,
+            LEAD(d) OVER (PARTITION BY sn ORDER BY d, CASE WHEN kind='END' THEN 0 ELSE 1 END) AS next_d
+          FROM ev
+        ),
+        periods AS (
+          -- On-wing windows: START -> END (or today if still installed)
+          SELECT sn, pn, ac AS tail, d AS s, COALESCE(next_d, DATE_ADD(CURRENT_DATE(), 1)) AS e
+          FROM ordered WHERE kind = 'START'
+        ),
+        per_period AS (
+          -- Airframe counter delta within each window, filtered to >= reset_date
+          SELECT p.sn, MAX(p.pn) AS pn,
+            MAX(f.total_ac_flight_hours) - MIN(f.total_ac_flight_hours) AS hrs
+          FROM periods p
+          JOIN inv_baseline ib ON p.sn = ib.sn AND p.pn = ib.pn
+          JOIN {flt} f ON f.ac = p.tail AND f.void <> 'Y'
+                     AND f.flight_date >= GREATEST(p.s, ib.reset_date)
+                     AND f.flight_date < p.e
+          GROUP BY p.sn, p.tail, p.s, p.e
+        ),
+        flight_since_reset AS (
+          -- Sum of airframe hours accumulated since last reset
+          SELECT sn, MAX(pn) AS pn, CAST(ROUND(COALESCE(SUM(hrs), 0)) AS INT) AS flight_hrs
+          FROM per_period GROUP BY sn
+        )
+        SELECT COALESCE(fsr.pn, ib.pn) AS pn,
+               ib.sn,
+               ib.reset_date,
+               ib.baseline_tso_hours,
+               COALESCE(fsr.flight_hrs, 0) AS flight_hours_since_reset,
+               ib.baseline_tso_hours + COALESCE(fsr.flight_hrs, 0) AS live_tso,
+               (SELECT COUNT(*) FROM periods WHERE periods.sn = ib.sn)::INT AS on_wing_periods,
+               CURRENT_DATE() AS as_of_date,
+               CURRENT_TIMESTAMP() AS computed_at
+        FROM inv_baseline ib
+        LEFT JOIN flight_since_reset fsr ON ib.sn = fsr.sn AND ib.pn = fsr.pn
+    """)
+
+    count = spark.table(target_table).count()
+    print(f"  ✓ part_live_tso: {count} rows")
+    return count
+
+# COMMAND ----------
+
 def merge_fact_order():
     """Merge fact_order from Silver order_detail."""
     source_table = get_silver_table("qx_ppmtx_order_detail")
@@ -1145,6 +1239,115 @@ def merge_fact_teardown():
 
 # COMMAND ----------
 
+def merge_fact_engineering_order():
+    """Merge fact_engineering_order from Silver engineering_order."""
+    source_table = get_silver_table("qx_ppmtx_engineering_order")
+    target_table = get_gold_table("qx_ppmtx_gold_fact_engineering_order")
+    dim_ata_table = get_gold_table("qx_ppmtx_gold_dim_ata_chapter")
+
+    print(f"Merging: {target_table}")
+
+    # Read and deduplicate Silver
+    silver_df = (
+        spark.table(source_table)
+        .orderBy(col("modified_date").desc())
+        .dropDuplicates(["eo"])
+    )
+
+    # Load dimension lookup
+    dim_ata = spark.table(dim_ata_table).select("dim_ata_chapter_key", "chapter", "section", "paragraph")
+
+    # Join and build Gold columns
+    gold_df = (
+        silver_df
+        .join(
+            dim_ata,
+            (silver_df["chapter"] == dim_ata["chapter"]) &
+            (F.coalesce(silver_df["section"], lit(0)) == dim_ata["section"]) &
+            (F.coalesce(silver_df["paragraph"], lit(0)) == dim_ata["paragraph"]),
+            "left"
+        )
+        .withColumn("fact_engineering_order_key", F.xxhash64(silver_df["eo"]))
+        .withColumn(
+            "authorized_date_key",
+            F.when(
+                silver_df["authorized_date"].isNotNull(),
+                F.date_format(silver_df["authorized_date"].cast("date"), "yyyyMMdd").cast("int")
+            )
+        )
+        .withColumn(
+            "revised_date_key",
+            F.when(
+                silver_df["revised_date"].isNotNull(),
+                F.date_format(silver_df["revised_date"].cast("date"), "yyyyMMdd").cast("int")
+            )
+        )
+        .withColumn(
+            "effective_date_key",
+            F.when(
+                silver_df["effective_date"].isNotNull(),
+                F.date_format(silver_df["effective_date"].cast("date"), "yyyyMMdd").cast("int")
+            )
+        )
+        .withColumn(
+            "schedule_date_key",
+            F.when(
+                silver_df["schedule_date"].isNotNull(),
+                F.date_format(silver_df["schedule_date"].cast("date"), "yyyyMMdd").cast("int")
+            )
+        )
+        .withColumn(
+            "issued_date_key",
+            F.when(
+                silver_df["issued_date"].isNotNull(),
+                F.date_format(silver_df["issued_date"].cast("date"), "yyyyMMdd").cast("int")
+            )
+        )
+        .select(
+            "fact_engineering_order_key",
+            col("dim_ata_chapter_key"),
+            col("authorized_date_key"),
+            col("revised_date_key"),
+            col("effective_date_key"),
+            col("schedule_date_key"),
+            col("issued_date_key"),
+            silver_df["eo"],
+            silver_df["eo_category"],
+            silver_df["eo_description"],
+            silver_df["status"],
+            silver_df["authorization"],
+            silver_df["authorized_by"],
+            silver_df["revision"],
+            silver_df["revised_by"],
+            silver_df["manditory"],
+            silver_df["applicable"],
+            silver_df["schedule_hours"],
+            silver_df["schedule_cycles"],
+            silver_df["schedule_days"],
+            silver_df["repeat_number"],
+            silver_df["next_eo"],
+        )
+    )
+
+    # MERGE
+    gold_df.createOrReplaceTempView("source_fact_engineering_order")
+    merge_cols = list(gold_df.columns)
+    update_set = ", ".join([f"target.`{c}` = source.`{c}`" for c in merge_cols])
+
+    spark.sql(f"""
+        MERGE INTO {target_table} AS target
+        USING source_fact_engineering_order AS source
+        ON target.eo = source.eo
+        WHEN MATCHED THEN UPDATE SET {update_set}
+        WHEN NOT MATCHED THEN INSERT *
+    """)
+
+    count = spark.table(target_table).count()
+    print(f"  ✓ fact_engineering_order: {count} rows")
+    return count
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Execute All Merges (Dependency Order)
 
@@ -1175,8 +1378,10 @@ results["fact_inventory_transaction"] = merge_fact_inventory_transaction()
 results["fact_inventory_snapshot"] = merge_fact_inventory_snapshot()
 results["fact_inventory_control"] = merge_fact_inventory_control()
 results["engine_live_times"] = merge_engine_live_times()
+results["part_live_tso"] = merge_part_live_tso()
 results["fact_order"] = merge_fact_order()
 results["fact_teardown"] = merge_fact_teardown()
+results["fact_engineering_order"] = merge_fact_engineering_order()
 
 # Phase 3: Bridges (depend on facts + dimensions)
 print("\n--- Phase 3: Bridges ---")

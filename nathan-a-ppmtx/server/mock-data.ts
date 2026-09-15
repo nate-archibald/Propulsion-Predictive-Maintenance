@@ -84,6 +84,15 @@ export const MOCK_WEEKLY_DEFECT_TREND: Row[] = [
   { week: "W23", count: 9 },
 ];
 
+export const MOCK_ECMP_DETAILS: Row[] = [
+  { eo: "ECMP-4566", description: "N643QX #2 ENGINE - SP097 & PINS SET REPLACEMENT DUE TO ADVERSE VIBRATION TREND", ac: "N643QX" },
+  { eo: "ECMP-4565", description: "N634QX #1 ENGINE MAINTENANCE DUE TO EGT MARGIN DROP- COMPRESSOR WASH", ac: "N634QX" },
+  { eo: "ECMP-4564", description: "N627QX - ENG #2 - R&R FAN BLADES RETAINING PINS SET DUE TO ADVERSE VIBRATION TREND", ac: "N627QX" },
+  { eo: "ECMP-4563", description: "N637QX ENG 2 T/R LH FEEDBACK ACTUATOR #4 REPLACEMENT DUE TO POSITION SENSOR DISAGREE FC.", ac: "N637QX" },
+  { eo: "ECMP-4562", description: "N630QX #1 ENGINE MAINTENANCE DUE TO EGT MARGIN DROP- COMPRESSOR WASH", ac: "N630QX" },
+  { eo: "ECMP-4561", description: "N637QX #2 ENGINE - NEW MAPPING SP097 & PINS SET REPLACEMENT DUE TO ADVERSE VIBRATION TREND", ac: "N637QX" },
+];
+
 export const MOCK_KPIS: Row = {
   activeDefects: MOCK_DEFECTS.filter((d) => d.impact !== "NONE").length,
   llpAlerts: MOCK_PARTS.filter((p) => p.isLLP && typeof p.cyclesRemaining === "number" && (p.cyclesRemaining as number) < 1000).length,

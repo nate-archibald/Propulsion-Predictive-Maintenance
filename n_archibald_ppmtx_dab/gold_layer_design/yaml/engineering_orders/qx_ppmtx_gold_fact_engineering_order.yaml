@@ -1,0 +1,268 @@
+table_name: qx_ppmtx_gold_fact_engineering_order
+entity_type: fact
+domain: engineering_orders
+grain: "One row per engineering order, identified by (eo)"
+update_frequency: daily
+fact_type: transaction
+description: "Engineering order (EO/EC) fact tracking mandatory service bulletins, ECMP task cards, and other engineering directives. Business: enables the Overview 'ECMP' KPI (count of open engineering orders in the ECMP category), compliance tracking against schedule due dates, and ATA-chapter-level engineering workload trending. Technical: transaction fact sourced from Silver qx_ppmtx_engineering_order with surrogate key joins to dim_ata_chapter and dim_date."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "engineering_orders"
+  entity_type: "fact"
+  grain: "eo"
+  fact_type: "transaction"
+
+primary_key: ["fact_engineering_order_key"]
+
+foreign_keys:
+  - columns: ["dim_ata_chapter_key"]
+    references: qx_ppmtx_gold_dim_ata_chapter(dim_ata_chapter_key)
+    nullable: true
+  - columns: ["authorized_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+  - columns: ["revised_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+  - columns: ["effective_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+  - columns: ["schedule_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+  - columns: ["issued_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+
+measures:
+  - schedule_hours
+  - schedule_cycles
+  - schedule_days
+
+columns:
+  - name: fact_engineering_order_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for the engineering order fact. Business: unique identifier for each engineering order/EC. Technical: generated via hash of (eo)."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: eo
+      transformation: GENERATED
+      transformation_logic: "HASH(eo)"
+
+  - name: dim_ata_chapter_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to ATA chapter dimension. Business: classifies the engineering order by aircraft system. Technical: lookup join on (chapter, section, paragraph) to dim_ata_chapter; NULL when the EO falls outside the propulsion-scoped chapters carried in dim_ata_chapter."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: chapter
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_ata_chapter ON (chapter, section, paragraph)"
+
+  - name: authorized_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for EO authorization date. Business: when the engineering order was authorized for execution. Technical: CAST(date_format(authorized_date, 'yyyyMMdd') AS INT)."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: authorized_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(authorized_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: revised_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for EO revision date. Business: when the engineering order was last revised. Technical: CAST(date_format(revised_date, 'yyyyMMdd') AS INT)."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: revised_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(revised_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: effective_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for EO effective date. Business: when the engineering order became effective/applicable. Technical: CAST(date_format(effective_date, 'yyyyMMdd') AS INT)."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: effective_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(effective_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: schedule_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for EO next-due schedule date. Business: the calendar date this EO is next due for compliance. Technical: CAST(date_format(schedule_date, 'yyyyMMdd') AS INT)."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: schedule_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(schedule_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: issued_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for EO issue date. Business: the date the engineering order was originally issued (distinct from authorized_date). Drives the ECMP details dropdown 'Issue Date' column on the Overview page. Technical: CAST(date_format(issued_date, 'yyyyMMdd') AS INT)."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: issued_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(issued_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: eo
+    data_type: STRING
+    nullable: false
+    description: "Engineering order number. Business: unique identifier for the engineering order/EC. Technical: degenerate dimension, natural/business key."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: eo
+      transformation: DIRECT_COPY
+      transformation_logic: "eo"
+
+  - name: eo_category
+    data_type: STRING
+    nullable: true
+    description: "Engineering order category. Business: classification of the EO (e.g., ECMP = Engineering Change Maintenance Program task card). Drives the Overview 'ECMP' open-count KPI. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: eo_category
+      transformation: DIRECT_COPY
+      transformation_logic: "eo_category"
+
+  - name: eo_description
+    data_type: STRING
+    nullable: true
+    description: "Engineering order narrative description. Business: free-text description of the directive/task. Technical: text attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: eo_description
+      transformation: DIRECT_COPY
+      transformation_logic: "eo_description"
+
+  - name: status
+    data_type: STRING
+    nullable: true
+    description: "Engineering order status. Business: current lifecycle state of the EO (e.g., Open, Closed). Drives the Overview 'ECMP' open-count KPI. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: status
+      transformation: DIRECT_COPY
+      transformation_logic: "status"
+
+  - name: authorization
+    data_type: STRING
+    nullable: true
+    description: "Authorization reference/type. Business: the authority under which the EO was raised. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: authorization
+      transformation: DIRECT_COPY
+      transformation_logic: "authorization"
+
+  - name: authorized_by
+    data_type: STRING
+    nullable: true
+    description: "Person/role who authorized the EO. Business: accountability for EO authorization. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: authorized_by
+      transformation: DIRECT_COPY
+      transformation_logic: "authorized_by"
+
+  - name: revision
+    data_type: STRING
+    nullable: true
+    description: "Engineering order revision number. Business: tracks the current revision level of the EO document. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: revision
+      transformation: DIRECT_COPY
+      transformation_logic: "revision"
+
+  - name: revised_by
+    data_type: STRING
+    nullable: true
+    description: "Person/role who revised the EO. Business: accountability for the latest revision. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: revised_by
+      transformation: DIRECT_COPY
+      transformation_logic: "revised_by"
+
+  - name: manditory
+    data_type: STRING
+    nullable: true
+    description: "Mandatory compliance flag (source spelling preserved). Business: indicates whether compliance with this EO is mandatory. Technical: flag from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: manditory
+      transformation: DIRECT_COPY
+      transformation_logic: "manditory"
+
+  - name: applicable
+    data_type: STRING
+    nullable: true
+    description: "Applicability flag. Business: indicates whether the EO applies to the current fleet/configuration. Technical: flag from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: applicable
+      transformation: DIRECT_COPY
+      transformation_logic: "applicable"
+
+  - name: schedule_hours
+    data_type: DECIMAL
+    nullable: true
+    description: "Scheduled compliance interval in flight hours. Business: recurring interval for compliance tracking. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: schedule_hours
+      transformation: DIRECT_COPY
+      transformation_logic: "schedule_hours"
+
+  - name: schedule_cycles
+    data_type: DECIMAL
+    nullable: true
+    description: "Scheduled compliance interval in cycles. Business: recurring interval for compliance tracking. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: schedule_cycles
+      transformation: DIRECT_COPY
+      transformation_logic: "schedule_cycles"
+
+  - name: schedule_days
+    data_type: DECIMAL
+    nullable: true
+    description: "Scheduled compliance interval in calendar days. Business: recurring interval for compliance tracking. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: schedule_days
+      transformation: DIRECT_COPY
+      transformation_logic: "schedule_days"
+
+  - name: repeat_number
+    data_type: DECIMAL
+    nullable: true
+    description: "Repeat sequence number for recurring EOs. Business: tracks which recurrence of a repeating EO this row represents. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: repeat_number
+      transformation: DIRECT_COPY
+      transformation_logic: "repeat_number"
+
+  - name: next_eo
+    data_type: STRING
+    nullable: true
+    description: "Next engineering order in sequence. Business: reference to the follow-on EO for recurring directives. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_engineering_order
+      silver_column: next_eo
+      transformation: DIRECT_COPY
+      transformation_logic: "next_eo"

@@ -11,21 +11,7 @@ import {
 import { Search, Package, AlertTriangle } from "lucide-react";
 import type { SpareItem } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
-
-function RiskBadge({ risk }: { risk: string }) {
-  const styles: Record<string, string> = {
-    HIGH: "bg-destructive text-destructive-foreground",
-    MEDIUM: "bg-[var(--warning)] text-[var(--warning-foreground)]",
-    LOW: "bg-[var(--success)] text-[var(--success-foreground)]",
-  };
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${styles[risk] ?? "bg-muted text-muted-foreground"}`}
-    >
-      {risk}
-    </span>
-  );
-}
+import { RiskBadge, ConditionBadge } from "../components/qx-ui";
 
 export default function SparesPage() {
   const [search, setSearch] = useState("");
@@ -60,8 +46,6 @@ export default function SparesPage() {
     .map(([, v]) => v)
     .sort((a, b) => b.high - a.high);
 
-  if (loading) return <Skeleton className="h-96 w-full" />;
-
   return (
     <div className="space-y-6" data-testid="spares-page">
       <div>
@@ -90,29 +74,35 @@ export default function SparesPage() {
       </div>
 
       {/* Station risk overview */}
-      <Card data-testid="station-risk-chart">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />
-            Stock-Out Risk by Station
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <BarChart
-            data={stationRisk.map((s) => ({
-              station: s.station,
-              highRisk: s.high,
-            }))}
-            xKey="station"
-            yKey="highRisk"
-            height={220}
-            colors={["var(--destructive)"]}
-          />
-        </CardContent>
-      </Card>
+      {loading ? (
+        <Skeleton className="h-56 w-full" />
+      ) : (
+        <Card data-testid="station-risk-chart">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              Stock-Out Risk by Station
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BarChart
+              data={stationRisk.map((s) => ({
+                station: s.station,
+                highRisk: s.high,
+              }))}
+              xKey="station"
+              yKey="highRisk"
+              height={220}
+              colors={["var(--destructive)"]}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Inventory table */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <Skeleton className="h-96 w-full" />
+      ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             No spares match your search.
@@ -146,7 +136,7 @@ export default function SparesPage() {
                     <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
                       Qty
                     </th>
-                    <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
+                    <th className="py-2.5 px-3 text-left font-medium text-muted-foreground" title="Removals in the last 90 days">
                       Removals/90d
                     </th>
                     <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
@@ -166,9 +156,7 @@ export default function SparesPage() {
                       <td className="py-2 px-3">{s.description}</td>
                       <td className="py-2 px-3 font-medium">{s.station}</td>
                       <td className="py-2 px-3">
-                        <span className="text-xs px-2 py-0.5 rounded bg-muted">
-                          {s.condition}
-                        </span>
+                        <ConditionBadge condition={s.condition} />
                       </td>
                       <td className="py-2 px-3 font-semibold">{s.quantity}</td>
                       <td className="py-2 px-3">{s.removalRate90d}</td>

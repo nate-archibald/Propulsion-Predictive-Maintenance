@@ -1,0 +1,604 @@
+﻿[
+  {
+    "name": "[dev emily_yamauchi] ds-bagratio-inference-features-pipeline",
+    "pipeline_id": "1848ef8b-9294-4af2-8c20-7312f32101e2",
+    "state": "IDLE"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:49.249Z",
+        "state": "CREATED",
+        "update_id": "1bf53751-aeb8-4b0e-93b2-87bb6eb1a149"
+      },
+      {
+        "creation_time": "2026-09-14T06:23:54.768Z",
+        "state": "FAILED",
+        "update_id": "5cd4a00b-0cd0-4dd5-8587-aadedc0ccc58"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:17.681Z",
+        "state": "COMPLETED",
+        "update_id": "24539ce9-dcc3-4d54-87bc-e7900aab0c89"
+      },
+      {
+        "creation_time": "2026-09-12T13:04:57.397Z",
+        "state": "COMPLETED",
+        "update_id": "505dcaf6-0da6-45ed-83bc-31c2efd24825"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:19.233Z",
+        "state": "COMPLETED",
+        "update_id": "1c65e646-844f-4e96-b75e-8c75e13dba10"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_fact_defect IxsA9x",
+    "pipeline_id": "1ff76841-e974-46b1-a177-de4e97b3559b",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:49.600Z",
+        "state": "CREATED",
+        "update_id": "2189df98-ab90-43dc-8549-d61848ee9543"
+      },
+      {
+        "creation_time": "2026-09-14T06:23:55.282Z",
+        "state": "FAILED",
+        "update_id": "3fba28ad-fcf5-42ce-a217-6a47643864a7"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:18.275Z",
+        "state": "COMPLETED",
+        "update_id": "88650bb3-8f95-422e-9c4e-68d4c16dfcd7"
+      },
+      {
+        "creation_time": "2026-09-12T13:04:57.828Z",
+        "state": "COMPLETED",
+        "update_id": "2189ef9f-b6ad-49f8-a5c1-b411e9291e83"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:19.802Z",
+        "state": "COMPLETED",
+        "update_id": "265b60e2-0774-4215-8194-8b03864bc05f"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_fact_inventory_snapshot cNIkyS",
+    "pipeline_id": "49132c27-1ead-4e0c-ac6c-6dcceaf526f4",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:50.717Z",
+        "state": "CREATED",
+        "update_id": "7cc5468f-00e9-4459-8d4a-e8bb49574c8d"
+      },
+      {
+        "creation_time": "2026-09-14T06:23:55.861Z",
+        "state": "FAILED",
+        "update_id": "bebd2c1b-6fc7-4dd3-9c01-2dda3fde9f2d"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:18.820Z",
+        "state": "COMPLETED",
+        "update_id": "c2dea581-f71f-4185-8b3f-afcc9ce1763b"
+      },
+      {
+        "creation_time": "2026-09-12T13:04:58.246Z",
+        "state": "COMPLETED",
+        "update_id": "03dbb0d5-c75e-4d24-bd0f-6e77e3b39f35"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:20.343Z",
+        "state": "COMPLETED",
+        "update_id": "67c26b20-64b5-40a6-a038-34391ca978f7"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_fact_teardown cNrHkc",
+    "pipeline_id": "4d700d8e-b214-4112-8c3c-530d86aebd21",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T05:35:55.966Z",
+        "state": "FAILED",
+        "update_id": "39a60246-49c0-477e-8389-15ba962bb270"
+      },
+      {
+        "creation_time": "2026-09-14T05:34:38.865Z",
+        "state": "FAILED",
+        "update_id": "a5688391-c608-409b-b32c-ec7cc384123b"
+      },
+      {
+        "creation_time": "2026-08-31T17:53:22.361Z",
+        "state": "FAILED",
+        "update_id": "1c5d9c90-c20b-4d06-84bd-6cb207419e32"
+      },
+      {
+        "creation_time": "2026-08-31T17:50:19.429Z",
+        "state": "FAILED",
+        "update_id": "5aef21b8-f5fb-4cfc-a008-65f0165ec707"
+      }
+    ],
+    "name": "[dev nathan_archibald] qx_ppmtx Silver Layer Pipeline",
+    "pipeline_id": "5b564f0c-4906-4094-bfac-118fa570f1f9",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "IDLE"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:47.551Z",
+        "state": "CREATED",
+        "update_id": "0a1fd10d-9a2a-4774-b403-f0d1ee067ab1"
+      },
+      {
+        "creation_time": "2026-09-14T06:23:56.371Z",
+        "state": "FAILED",
+        "update_id": "a555b1cc-e062-411f-8361-b924c125624a"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:19.307Z",
+        "state": "COMPLETED",
+        "update_id": "7ed6fa85-faff-4ac0-af48-976c1b9d673c"
+      },
+      {
+        "creation_time": "2026-09-12T13:04:58.718Z",
+        "state": "COMPLETED",
+        "update_id": "4d24fc2b-f769-4f5f-83cd-b2254ccb0abb"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:20.878Z",
+        "state": "COMPLETED",
+        "update_id": "391ec72f-d448-4339-8466-faf040a9b3c1"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_bridge_defect_part IDIzUC",
+    "pipeline_id": "60d2be8b-adbd-4559-a965-6569e7ea7311",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "kaleookealohamauloa.hao@alaskaair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-07-24T22:35:32.645Z",
+        "state": "COMPLETED",
+        "update_id": "81c1329b-459f-4681-9e14-82e04a5f263e"
+      }
+    ],
+    "name": "TEST-radarline-od-market-base",
+    "pipeline_id": "640f3d6f-a599-4cb3-9a7b-fa136446a854",
+    "run_as_user_name": "kaleookealohamauloa.hao@alaskaair.com",
+    "state": "IDLE"
+  },
+  {
+    "name": "[dev emily_yamauchi] ds-customer-features-biz-leisure-pipeline",
+    "pipeline_id": "7cad19fd-e253-4f73-b0d5-db309b9d30ed",
+    "state": "IDLE"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:49.098Z",
+        "state": "CREATED",
+        "update_id": "8c1849f1-d778-42bd-b600-1520664c25aa"
+      },
+      {
+        "creation_time": "2026-09-14T06:23:56.847Z",
+        "state": "FAILED",
+        "update_id": "0f5b0a84-4936-4e26-8b1c-a4e7d1c0f812"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:19.805Z",
+        "state": "COMPLETED",
+        "update_id": "1749aa52-8e2a-4532-9787-f1d63054b346"
+      },
+      {
+        "creation_time": "2026-09-12T13:04:59.303Z",
+        "state": "COMPLETED",
+        "update_id": "cd3ccb05-d411-4162-b937-d083680dcfc7"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:21.486Z",
+        "state": "COMPLETED",
+        "update_id": "42b7664b-0970-4add-909c-1ed4a0e48694"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_dim_aircraft HGnEmR",
+    "pipeline_id": "7ed62684-863c-4677-a88a-d892892c83ba",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:49.460Z",
+        "state": "CREATED",
+        "update_id": "6ef448c9-285c-4de5-8ed6-95154142530e"
+      },
+      {
+        "creation_time": "2026-09-14T06:23:57.273Z",
+        "state": "FAILED",
+        "update_id": "36991015-476f-4e2c-9349-75bdedf4ff47"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:20.282Z",
+        "state": "COMPLETED",
+        "update_id": "1b2ed9fa-6fc5-455c-a994-b28ca68b443a"
+      },
+      {
+        "creation_time": "2026-09-12T13:04:59.822Z",
+        "state": "COMPLETED",
+        "update_id": "c96fd0dd-f5e7-4f5e-add1-7369ddffbe6f"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:22.048Z",
+        "state": "COMPLETED",
+        "update_id": "f9285b37-c0aa-4bb5-b65c-56c3001e3dcc"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_fact_inventory_transaction YY9e0q",
+    "pipeline_id": "7ffaf907-6df5-4e84-8cc8-c3509044e818",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "kaleookealohamauloa.hao@alaskaair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-07-28T22:18:39.092Z",
+        "state": "FAILED",
+        "update_id": "79328ab1-c0e5-41a0-ae8d-62a3a4c0d596"
+      },
+      {
+        "creation_time": "2026-07-28T21:33:59.956Z",
+        "state": "CANCELED",
+        "update_id": "2d7b3643-795c-4b48-91c8-3186ca4ec82a"
+      },
+      {
+        "creation_time": "2026-07-28T21:20:48.947Z",
+        "state": "FAILED",
+        "update_id": "04bf7a2f-5a91-49a3-8fc8-2e9fab1635ea"
+      },
+      {
+        "creation_time": "2026-07-28T21:20:11.578Z",
+        "state": "FAILED",
+        "update_id": "4878172d-6db3-4730-8965-e7c957c678a7"
+      },
+      {
+        "creation_time": "2026-07-28T21:19:46.266Z",
+        "state": "FAILED",
+        "update_id": "782bfdbd-6526-46c7-8254-773bbae99d98"
+      }
+    ],
+    "name": "[dev kaleookealohamauloa_hao] radarline-od-market-base",
+    "pipeline_id": "8c7b295d-0f84-4826-ae88-fb9df01f4a8a",
+    "run_as_user_name": "kaleookealohamauloa.hao@alaskaair.com",
+    "state": "IDLE"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:54.210Z",
+        "state": "CREATED",
+        "update_id": "480289d1-ceaa-49a2-a50a-c4c6c8120cb9"
+      },
+      {
+        "creation_time": "2026-09-14T06:23:57.671Z",
+        "state": "FAILED",
+        "update_id": "b656ab59-c70e-4783-818a-0547be43967f"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:20.728Z",
+        "state": "COMPLETED",
+        "update_id": "7e99a188-29ee-4a79-b499-4da5a0dbbeac"
+      },
+      {
+        "creation_time": "2026-09-12T13:05:00.312Z",
+        "state": "COMPLETED",
+        "update_id": "ddc922b3-23de-4a74-bbb4-9bcb982adc8f"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:22.643Z",
+        "state": "COMPLETED",
+        "update_id": "639596ed-dfe5-4222-8764-b64a9b62b751"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_fact_component_removal AZGnAX",
+    "pipeline_id": "932e6c03-b396-4d72-8f90-d40b7fdf178c",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:49.729Z",
+        "state": "CREATED",
+        "update_id": "846179c9-1e67-478b-9cb4-4a2594cf434c"
+      },
+      {
+        "creation_time": "2026-09-14T06:23:58.175Z",
+        "state": "FAILED",
+        "update_id": "879258ef-c564-4497-baae-37f40db50b98"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:21.196Z",
+        "state": "COMPLETED",
+        "update_id": "617919f9-fb11-4501-a9f7-858b36fceab6"
+      },
+      {
+        "creation_time": "2026-09-12T13:05:00.826Z",
+        "state": "COMPLETED",
+        "update_id": "732c59b6-8473-4017-963f-a3e136f9991a"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:23.092Z",
+        "state": "COMPLETED",
+        "update_id": "05b31481-3483-4f61-8599-7168d29fa510"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_dim_part t7FQgX",
+    "pipeline_id": "a54ac401-d43e-46c4-9f18-e6da2390dba7",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:49.945Z",
+        "state": "CREATED",
+        "update_id": "df4606f8-8731-44ee-bb10-fddb187ca47c"
+      },
+      {
+        "creation_time": "2026-09-14T06:23:58.660Z",
+        "state": "FAILED",
+        "update_id": "e34b7e1c-907a-4b12-86c8-fef6d9f6e784"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:21.658Z",
+        "state": "COMPLETED",
+        "update_id": "85ad5c76-85b0-463c-8f83-0b523f851c5d"
+      },
+      {
+        "creation_time": "2026-09-12T13:05:01.329Z",
+        "state": "COMPLETED",
+        "update_id": "4f9b1f00-a2b1-4a33-8af7-c9b73b865733"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:23.708Z",
+        "state": "COMPLETED",
+        "update_id": "dfddad07-f68a-455b-af51-aa802fb4fe58"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_dim_ata_chapter 1WaPfL",
+    "pipeline_id": "b31050cb-8418-4874-918e-d1131a98a3ba",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:52.329Z",
+        "state": "CREATED",
+        "update_id": "d5a76c32-6106-435f-b2df-ed00a868c807"
+      },
+      {
+        "creation_time": "2026-09-14T06:23:59.200Z",
+        "state": "FAILED",
+        "update_id": "84b1ad8d-fdef-4059-bef1-08276493431a"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:22.145Z",
+        "state": "COMPLETED",
+        "update_id": "8997d516-4132-4daa-9bfa-c27eed4caaa6"
+      },
+      {
+        "creation_time": "2026-09-12T13:05:01.885Z",
+        "state": "COMPLETED",
+        "update_id": "eca0620b-5cc9-490a-bb5d-783980acb8f0"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:24.230Z",
+        "state": "COMPLETED",
+        "update_id": "27955f2f-a0db-4e0e-9426-0a056b65174b"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_fact_inventory_control NtkZuc",
+    "pipeline_id": "cc9870cb-24b6-4730-b4e3-66b6e7b709f3",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:23:59.640Z",
+        "state": "COMPLETED",
+        "update_id": "2cb10adc-d3a2-42b1-b250-8ae37dd2551b"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:22.591Z",
+        "state": "COMPLETED",
+        "update_id": "871746ee-50bd-4632-925f-9d80da072bd2"
+      },
+      {
+        "creation_time": "2026-09-12T13:05:02.333Z",
+        "state": "COMPLETED",
+        "update_id": "3e3e9a8f-4e8e-4aa3-ab88-528cac677081"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:24.987Z",
+        "state": "COMPLETED",
+        "update_id": "5360dbb0-b0db-45dc-8152-581df232bb00"
+      },
+      {
+        "creation_time": "2026-09-10T13:05:21.589Z",
+        "state": "COMPLETED",
+        "update_id": "9accd8fa-d903-4e52-9378-d56c7c70d381"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_dim_date ceTmds",
+    "pipeline_id": "d0331a2c-aaea-4334-925d-acd2fbb8aeab",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "IDLE"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:52.722Z",
+        "state": "CREATED",
+        "update_id": "9e560bab-7d6f-42cf-af8f-90af5f652f30"
+      },
+      {
+        "creation_time": "2026-09-14T06:24:00.049Z",
+        "state": "FAILED",
+        "update_id": "8c214c95-b40c-49d9-9d20-044c9a2207f1"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:23.102Z",
+        "state": "COMPLETED",
+        "update_id": "8be7fc98-fc38-412e-9802-37533427545d"
+      },
+      {
+        "creation_time": "2026-09-12T13:05:02.815Z",
+        "state": "COMPLETED",
+        "update_id": "55cffe5b-6855-4fdb-9f4f-9993c4446c98"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:25.460Z",
+        "state": "COMPLETED",
+        "update_id": "379732df-4022-413e-9832-239a2e3c6527"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_fact_order tsK2SY",
+    "pipeline_id": "e99fabc9-db8a-4561-9095-8e5c45847861",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:50.687Z",
+        "state": "CREATED",
+        "update_id": "5fa59426-8050-45d1-bad3-050140880b37"
+      },
+      {
+        "creation_time": "2026-09-14T06:24:00.473Z",
+        "state": "FAILED",
+        "update_id": "d95066b6-4dcb-40dc-beb5-ce03314310c9"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:23.520Z",
+        "state": "COMPLETED",
+        "update_id": "ae9905b6-cc28-4886-8b6a-e5c0c6704c8b"
+      },
+      {
+        "creation_time": "2026-09-12T13:05:03.260Z",
+        "state": "COMPLETED",
+        "update_id": "dd64a6cf-8238-4a12-bd2a-58dc50d51b6f"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:25.893Z",
+        "state": "COMPLETED",
+        "update_id": "5ce31d54-615d-4d7a-b21c-6f6a69a70c6b"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_dim_station Ctaerh",
+    "pipeline_id": "eb5d6a4f-e94c-448b-beae-bdebd75b6a62",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "RUNNING"
+  },
+  {
+    "name": "test-pipeline",
+    "pipeline_id": "f4408f52-e55b-40a3-8954-6c13d9e590e2",
+    "state": "IDLE"
+  },
+  {
+    "creator_user_name": "kaleookealohamauloa.hao@alaskaair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-13T14:18:02.387Z",
+        "state": "COMPLETED",
+        "update_id": "58e5ad9e-e1f8-4354-b5df-2b2cf5145a0a"
+      },
+      {
+        "creation_time": "2026-09-12T14:18:06.108Z",
+        "state": "COMPLETED",
+        "update_id": "445b42fb-697a-4f81-9ee3-a2920c258a62"
+      },
+      {
+        "creation_time": "2026-09-11T14:18:04.878Z",
+        "state": "COMPLETED",
+        "update_id": "f35c43e0-090b-4d52-ba7c-7b5c91d7b3e1"
+      },
+      {
+        "creation_time": "2026-09-10T14:18:03.758Z",
+        "state": "COMPLETED",
+        "update_id": "001a9dd5-792d-4e16-8a6b-7703f71b3180"
+      },
+      {
+        "creation_time": "2026-09-09T14:18:04.122Z",
+        "state": "COMPLETED",
+        "update_id": "a48ad1ff-d6af-4d39-8908-7a0c71d9a587"
+      }
+    ],
+    "name": "radarline-od-market-base",
+    "pipeline_id": "fd502a12-b98f-4745-b66b-a5fb692f2d42",
+    "run_as_user_name": "kaleookealohamauloa.hao@alaskaair.com",
+    "state": "IDLE"
+  },
+  {
+    "creator_user_name": "nathan.archibald@horizonair.com",
+    "latest_updates": [
+      {
+        "creation_time": "2026-09-14T06:24:00.908Z",
+        "state": "COMPLETED",
+        "update_id": "efe900b9-a75a-4ea7-9e50-11ae51f5591a"
+      },
+      {
+        "creation_time": "2026-09-13T13:05:23.966Z",
+        "state": "COMPLETED",
+        "update_id": "125e75e3-9cda-419d-81b0-4fb029cd43eb"
+      },
+      {
+        "creation_time": "2026-09-12T13:05:03.698Z",
+        "state": "COMPLETED",
+        "update_id": "2eb7799f-06bc-4528-8b2d-ae6bd4c357ba"
+      },
+      {
+        "creation_time": "2026-09-11T13:05:26.360Z",
+        "state": "COMPLETED",
+        "update_id": "a8f6731e-0ae4-4d8c-ad7c-f669f1526974"
+      },
+      {
+        "creation_time": "2026-09-10T13:05:23.064Z",
+        "state": "COMPLETED",
+        "update_id": "b3a70ba5-3249-444d-ae72-b7ba5720ddef"
+      }
+    ],
+    "name": "Synced table: subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_synced_gold_engine_live_times SCgf2O",
+    "pipeline_id": "fec7571b-e2b7-43b2-88de-e8282833766f",
+    "run_as_user_name": "nathan.archibald@horizonair.com",
+    "state": "IDLE"
+  }
+]

@@ -1,0 +1,5 @@
+{
+    "wait_timeout":  "50s",
+    "warehouse_id":  "600d6ad41356867b",
+    "statement":  "SELECT eo, issued_date_key, dd.calendar_date as issued_date\nFROM subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_gold_fact_engineering_order f\nLEFT JOIN subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_gold_dim_date dd ON f.issued_date_key = dd.dim_date_key\nWHERE upper(status)=\u0027OPEN\u0027 AND upper(eo_category)=\u0027ECMP\u0027 AND eo RLIKE \u0027^ECMP-[0-9]+$\u0027 AND CAST(substring(eo,6) AS INT) \u003e 4500"
+}

@@ -1,0 +1,5 @@
+{
+    "wait_timeout":  "50s",
+    "warehouse_id":  "600d6ad41356867b",
+    "statement":  "SELECT COUNT(*) as total_rows, COUNT(*) FILTER (WHERE upper(status)=\u0027OPEN\u0027 AND upper(eo_category)=\u0027ECMP\u0027) as open_ecmp, COUNT(DISTINCT eo_category) as distinct_categories FROM subject_maintenanceengineering_test.an_maintenanceengineering_ods.qx_ppmtx_gold_fact_engineering_order"
+}

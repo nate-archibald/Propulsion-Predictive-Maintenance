@@ -81,3 +81,16 @@ SCHEDULE CRON '0 0 7 * * ?' AT TIME ZONE 'UTC'
 AS
 SELECT *
 FROM ${bronze_catalog}.${bronze_schema}.qx_trax_order_detail;
+
+-- ============================================================================
+-- 7. qx_ppmtx_engineering_order (Engineering Orders)
+-- ============================================================================
+-- Silver engineering orders - validated EO/EC records (mandatory service bulletins,
+-- ECMP task cards, etc.). Powers the Overview 'ECMP' open-count KPI.
+CREATE OR REPLACE MATERIALIZED VIEW ${silver_catalog}.${silver_schema}.qx_ppmtx_engineering_order
+CLUSTER BY AUTO
+REFRESH POLICY INCREMENTAL
+SCHEDULE CRON '0 0 7 * * ?' AT TIME ZONE 'UTC'
+AS
+SELECT *
+FROM ${bronze_catalog}.${bronze_schema}.qx_trax_engineering_order;
