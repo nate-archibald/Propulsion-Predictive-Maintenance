@@ -11,6 +11,8 @@ import {
   MOCK_KPIS,
   MOCK_FLEET_LEADERS,
   MOCK_ECMP_DETAILS,
+  MOCK_DELAY_DETAILS,
+  MOCK_CANCEL_DETAILS,
 } from "./mock-data.js";
 import {
   mapDefect,
@@ -419,6 +421,81 @@ async function executeQuery(
   return appkit.lakebase.query(sql, params);
 }
 
+// ── Interchangeable-parts expansion ──────────────────────────────────
+// The Gold bridge qx_ppmtx_synced_gold_bridge_part_interchangeable holds directed
+// PN pairs (two-way materialized both directions; one-way base->alt only). This
+// central helper lets any endpoint that names a part number automatically include
+// its physically-equivalent alternates — the "whenever a PN appears, its
+// interchangeable PNs are included" rule — without per-endpoint substitution logic.
+// Non-transitive: only one hop from each seed PN.
+const INTERCHANGE_TABLE = `${S}.qx_ppmtx_synced_gold_bridge_part_interchangeable`;
+
+interface InterchangeAlt {
+  pn: string;
+  interchangeClass: "two_way" | "one_way";
+  prefer: boolean;
+  type: string;
+}
+
+// The synced bridge is small and refreshed once/day, so a process-lifetime cache
+// with a short TTL avoids a round-trip on every analytics query.
+const INTERCHANGE_TTL_MS = 60 * 60 * 1000; // 1 hour
+let _interchangeCache: { at: number; map: Map<string, InterchangeAlt[]> } | null = null;
+
+async function loadInterchangeMap(
+  req: Request,
+  appkit: any,
+): Promise<Map<string, InterchangeAlt[]>> {
+  const now = Date.now();
+  if (_interchangeCache && now - _interchangeCache.at < INTERCHANGE_TTL_MS) {
+    return _interchangeCache.map;
+  }
+  const map = new Map<string, InterchangeAlt[]>();
+  try {
+    const result = await executeQuery(
+      req,
+      appkit,
+      `SELECT pn, pn_interchangeable, interchange_class, interchangeable_type, prefer
+       FROM ${INTERCHANGE_TABLE}`,
+    );
+    for (const row of result.rows) {
+      const base = String(row.pn ?? "").trim().toUpperCase();
+      const alt = String(row.pn_interchangeable ?? "").trim();
+      if (!base || !alt) continue;
+      const list = map.get(base) ?? [];
+      list.push({
+        pn: alt,
+        interchangeClass: String(row.interchange_class) === "one_way" ? "one_way" : "two_way",
+        prefer: String(row.prefer ?? "").trim().toUpperCase() === "Y",
+        type: String(row.interchangeable_type ?? "").trim(),
+      });
+      map.set(base, list);
+    }
+  } catch (err) {
+    // If the bridge table isn't present/synced yet, degrade gracefully: expansion
+    // becomes a no-op (callers fall back to their curated PN lists). Cache the empty
+    // map briefly so a missing table isn't hammered on every request.
+    console.warn(`[Interchangeable] load failed — expansion disabled: ${err}`);
+  }
+  _interchangeCache = { at: now, map };
+  return map;
+}
+
+// One-hop expansion of a PN list to include direct interchangeable alternates.
+// Seeds are preserved (original casing); de-duped case-insensitively.
+function expandWithMap(map: Map<string, InterchangeAlt[]>, pns: string[]): string[] {
+  const out = new Map<string, string>(); // UPPER(pn) -> original-cased pn
+  for (const raw of pns) {
+    const p = String(raw ?? "").trim();
+    if (!p) continue;
+    if (!out.has(p.toUpperCase())) out.set(p.toUpperCase(), p);
+    for (const alt of map.get(p.toUpperCase()) ?? []) {
+      if (!out.has(alt.pn.toUpperCase())) out.set(alt.pn.toUpperCase(), alt.pn);
+    }
+  }
+  return [...out.values()];
+}
+
 await createApp({
   plugins: [server(), lakebase(), genie()],
   async onPluginsReady(appkit) {
@@ -668,19 +745,49 @@ await createApp({
       });
 
       // ── Weekly defect trend ──────────────────────────────────────────
+      // Includes weekly propulsion-attributable delay minutes alongside the
+      // defect count (same fact_defect_delay source + ATA scoping as the
+      // Overview KPI dropdowns), so the chart can overlay both series on a
+      // shared weekly x-axis. FULL OUTER JOIN keeps a week even if it only
+      // has one signal (e.g. defects but no delay events that week).
       app.get("/api/defects/weekly-trend", async (req: Request, res: Response) => {
         const weeks = clampLimit(req.query.weeks, 12, 104);
         try {
           const result = await executeQuery(
             req,
             appkit,
-            `SELECT d.year, d.week_of_year AS week, COUNT(*)::int AS count
-             FROM ${S}.qx_ppmtx_synced_gold_fact_defect f
-             JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON f.reported_date_key = d.dim_date_key
-             JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
-             WHERE c.chapter IN (${PROP_ATA_LIST})
-             GROUP BY d.year, d.week_of_year
-             ORDER BY d.year DESC, d.week_of_year DESC
+            `WITH week_dates AS (
+               SELECT year, week_of_year AS week, MAX(calendar_date) AS week_end_date
+               FROM ${S}.qx_ppmtx_synced_gold_dim_date
+               GROUP BY year, week_of_year
+             ),
+             defect_weeks AS (
+               SELECT d.year, d.week_of_year AS week, COUNT(*)::int AS count
+               FROM ${S}.qx_ppmtx_synced_gold_fact_defect f
+               JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON f.reported_date_key = d.dim_date_key
+               JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
+               WHERE c.chapter IN (${PROP_ATA_LIST})
+               GROUP BY d.year, d.week_of_year
+             ),
+             delay_weeks AS (
+               SELECT d.year, d.week_of_year AS week, COALESCE(SUM(fd.delay_minutes), 0)::int AS delay_minutes
+               FROM ${S}.qx_ppmtx_synced_gold_fact_defect_delay fd
+               JOIN ${S}.qx_ppmtx_synced_gold_fact_defect f
+                 ON fd.defect_type = f.defect_type AND fd.defect = f.defect AND fd.defect_item = f.defect_item
+               JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
+               JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON fd.delay_date_key = d.dim_date_key
+               WHERE c.chapter IN (${PROP_ATA_LIST})
+               GROUP BY d.year, d.week_of_year
+             )
+             SELECT COALESCE(dw.year, dl.year) AS year,
+                    COALESCE(dw.week, dl.week) AS week,
+                    wd.week_end_date::text AS week_end_date,
+                    COALESCE(dw.count, 0) AS count,
+                    COALESCE(dl.delay_minutes, 0) AS delay_minutes
+             FROM defect_weeks dw
+             FULL OUTER JOIN delay_weeks dl ON dw.year = dl.year AND dw.week = dl.week
+             JOIN week_dates wd ON wd.year = COALESCE(dw.year, dl.year) AND wd.week = COALESCE(dw.week, dl.week)
+             ORDER BY year DESC, week DESC
              LIMIT $1`,
             [weeks],
           );
@@ -711,9 +818,14 @@ await createApp({
           //    TSO min/avg/max stats. Live TSO is preferred (accounts for accumulated
           //    flight hours since last overhaul); falls back to static TSO if not yet
           //    reconstructed.
+          const wantInterchange = String(req.query.interchange ?? "1") !== "0";
+          const interMap = wantInterchange ? await loadInterchangeMap(req, appkit) : null;
           const unionParts = softTimeConfig.map(({ likePattern, pnList, displayName, softLimit }) => {
-            const partFilter = pnList
-              ? `p.pn IN (${pnList.map(pn => `'${pn.replace(/'/g, "''")}'`).join(", ")})`
+            // Augment explicit-PN components with their interchangeable alternates so
+            // no physically-equivalent unit is missed (non-transitive, one hop).
+            const effectivePnList = pnList && interMap ? expandWithMap(interMap, pnList) : pnList;
+            const partFilter = effectivePnList
+              ? `p.pn IN (${effectivePnList.map(pn => `'${pn.replace(/'/g, "''")}'`).join(", ")})`
               : `UPPER(p.pn_description) LIKE UPPER('%${(likePattern ?? "").replace(/'/g, "''").replace(/^%+|%+$/g, "")}%')`;
             const cap = softLimit * 2;
             return `
@@ -814,9 +926,14 @@ await createApp({
           // Sentinel/outlier hours (> 2× limit) are excluded as bad data.
           // Live TSO is preferred (accounts for accumulated flight hours since last
           // overhaul); falls back to static TSO if not yet reconstructed.
+          const wantInterchange = String(req.query.interchange ?? "1") !== "0";
+          const interMap = wantInterchange ? await loadInterchangeMap(req, appkit) : null;
           const unionParts = softTimeConfig.map(({ likePattern, pnList, displayName, softLimit }) => {
-            const partFilter = pnList
-              ? `p.pn IN (${pnList.map(pn => `'${pn.replace(/'/g, "''")}'`).join(", ")})`
+            // Augment explicit-PN components with their interchangeable alternates so
+            // no physically-equivalent unit is missed (non-transitive, one hop).
+            const effectivePnList = pnList && interMap ? expandWithMap(interMap, pnList) : pnList;
+            const partFilter = effectivePnList
+              ? `p.pn IN (${effectivePnList.map(pn => `'${pn.replace(/'/g, "''")}'`).join(", ")})`
               : `UPPER(p.pn_description) LIKE UPPER('%${(likePattern ?? "").replace(/'/g, "''").replace(/^%+|%+$/g, "")}%')`;
             const cap = softLimit * 2;
             const threshold = softLimit - projectedHours; // TSO at/above this crosses within window
@@ -934,6 +1051,42 @@ await createApp({
         } catch (err) {
           console.warn(`[Lakebase] /api/parts fallback: ${err}`);
           res.json({ data: MOCK_PARTS, source: "mock" });
+        }
+      });
+
+      // ── Interchangeable P/Ns for a given part ─────────────────────────
+      // Returns every part number interchangeable with :pn (two-way + one-way),
+      // preferred + two-way first. Powers the Parts-page detail panel and any
+      // caller that wants to show alternates when a PN is queried.
+      app.get("/api/interchangeable/:pn", async (req: Request, res: Response) => {
+        const pn = String(req.params.pn ?? "").trim();
+        if (!pn) {
+          res.json({ data: [], source: "live" });
+          return;
+        }
+        try {
+          const result = await executeQuery(
+            req,
+            appkit,
+            `SELECT pn_interchangeable, interchange_class, interchangeable_type, prefer, manufacturer
+             FROM ${INTERCHANGE_TABLE}
+             WHERE UPPER(pn) = UPPER($1)
+             ORDER BY (interchange_class = 'two_way') DESC,
+                      (UPPER(COALESCE(prefer, '')) = 'Y') DESC,
+                      pn_interchangeable`,
+            [pn],
+          );
+          const data = result.rows.map((r: Record<string, unknown>) => ({
+            pn: String(r.pn_interchangeable ?? ""),
+            interchangeClass: String(r.interchange_class ?? ""),
+            type: String(r.interchangeable_type ?? ""),
+            prefer: String(r.prefer ?? "").trim().toUpperCase() === "Y",
+            manufacturer: String(r.manufacturer ?? ""),
+          }));
+          res.json({ data, source: "live" });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/interchangeable fallback: ${err}`);
+          res.json({ data: [], source: "mock" });
         }
       });
 
@@ -1350,7 +1503,14 @@ await createApp({
 
       // ── Critical Spares (for Spare Quick View widget) ──────────────────────────────
       app.get("/api/critical-spares", async (req: Request, res: Response) => {
-        // Part mapping: part name → array of PNs for that part
+        // Part mapping: part name → array of PNs for that part.
+        // Some entries include interchangeable/superseding PNs used by other
+        // vendors/programs for the same physical part.
+        // NOTE: This widget intentionally uses a hand-curated PN list and does
+        // NOT apply the app-wide interchangeable-PN expansion. Many interchangeable
+        // PNs are outdated (superseded by SB revisions) and only clutter the view
+        // with 0-unit rows. These are the specific PNs Engineering confirmed have
+        // actual units tracked in our system.
         const partMap: Record<string, string[]> = {
           "FADEC": ["4120T00P60", "4120T00P63"],
           "FMU": ["4120T01P02"],
@@ -1371,51 +1531,48 @@ await createApp({
           "APU FADEC": ["4505003M"],
         };
 
-        // All unique PNs from the map
-        const allPns = Object.values(partMap).flat();
+        // All unique PNs from the curated map
+        const allPns = [...new Set(Object.values(partMap).flat())];
         const pnList = allPns.map((pn) => `'${pn.replace(/'/g, "''")}'`).join(", ");
 
         try {
-          // Spare parts: not installed AND in a serviceable condition
-          // Including INSPTEST (Inspected & Tested) since user data shows it's serviceable
-          const spareConditions = ["REPAIR", "SV", "OH", "NEW", "MOD", "INSPTEST"];
-          const conditionList = spareConditions.map((c) => `'${c.replace(/'/g, "''")}'`).join(", ");
+          // Spare parts, per Engineering's ERP definition:
+          //   1. Not installed on an aircraft directly (installed_ac IS NULL), AND
+          //   2. Not currently built into ANY higher assembly — including a spare
+          //      engine/APU that itself isn't mounted on an aircraft (nha_sn IS NULL).
+          //      "nha_sn" (Next Higher Assembly SN) is populated whenever a part is a
+          //      sub-component of something else, so this catches spare-engine-installed
+          //      parts that (1) alone would miss.
+          //   3. Condition is not "U/S" (Unserviceable), "SCRP" (Scrapped), or
+          //      "BADSTOCK". Note: "REPAIR" only reflects the *last* transaction type on
+          //      the part, not that it's actively out for repair right now — so it must
+          //      NOT be excluded here on its own.
+          //   4. No OPEN Repair Order (order_type='RO', status='OPEN') against this
+          //      specific serial number — this is what actually reflects "currently out
+          //      for repair", not the static condition code.
+          const excludedConditions = ["U/S", "SCRP", "BADSTOCK"];
+          const excludedConditionList = excludedConditions.map((c) => `'${c.replace(/'/g, "''")}'`).join(", ");
 
-          console.log(`[CRITICAL-SPARES] Spare conditions filter: (${conditionList})`);
+          console.log(`[CRITICAL-SPARES] Excluded conditions: (${excludedConditionList})`);
           console.log(`[CRITICAL-SPARES] PN list (${allPns.length} parts): ${pnList.substring(0, 100)}...`);
 
-          // Query: count parts that are NOT installed and have spare condition codes
-          // Using snapshot table for current state (not transaction history)
-          // FIX: Exclude parts installed on shop engines/APUs (installed_position IN ENG/APU)
-          
-          // DEBUG: First, show the raw data
-          const debugResult = await executeQuery(
-            req,
-            appkit,
-            `SELECT p.pn, s.sn, s.installed_ac, s.installed_position, st.station_code, s.condition
-             FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
-             JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
-             LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_station st ON s.dim_station_key = st.dim_station_key
-             WHERE p.pn = '4120T05P04'
-               AND s.installed_ac IS NULL
-               AND s.condition IN (${conditionList})
-             ORDER BY st.station_code, s.sn`,
-          );
-          console.log(`[DEBUG 4120T05P04] Raw data (${debugResult.rows.length} rows):`, debugResult.rows);
-          
           const result = await executeQuery(
             req,
             appkit,
             `SELECT p.pn, COUNT(DISTINCT s.sn)::int AS spare_count
              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
-             LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_station st ON s.dim_station_key = st.dim_station_key
              WHERE p.pn IN (${pnList})
                AND s.installed_ac IS NULL
-               AND (s.installed_position IS NULL 
-                    OR TRIM(COALESCE(s.installed_position, '')) NOT IN ('LH ENG', 'RH ENG', 'APU'))
-               AND s.condition IN (${conditionList})
-               AND (st.station_code IS NULL OR st.station_code NOT IN ('ENG', 'SHOP', 'ENGINE SHOP', 'MAINTENANCE'))
+               AND (s.nha_sn IS NULL OR TRIM(s.nha_sn) = '')
+               AND upper(TRIM(COALESCE(s.condition, ''))) NOT IN (${excludedConditionList})
+               AND NOT EXISTS (
+                 SELECT 1
+                 FROM ${S}.qx_ppmtx_synced_gold_fact_order fo
+                 JOIN ${S}.qx_ppmtx_synced_gold_dim_part fop ON fo.dim_part_key = fop.dim_part_key
+                 WHERE fop.pn = p.pn AND fo.sn = s.sn
+                   AND fo.order_type = 'RO' AND fo.status = 'OPEN'
+               )
              GROUP BY p.pn`,
           );
 
@@ -1501,8 +1658,6 @@ await createApp({
             req,
             appkit,
             `SELECT COUNT(*) FILTER (WHERE f.status = 'OPEN')::int AS active_defects,
-                    COUNT(*) FILTER (WHERE f.cancellation IS NOT NULL AND ${inRange})::int AS cancel_count,
-                    COALESCE(SUM(f.delay_minutes) FILTER (WHERE ${inRange}), 0)::int AS total_delay_minutes,
                     COUNT(*)::int AS total_defects,
                     COUNT(*) FILTER (
                       WHERE f.defect_type = 'PILOT'
@@ -1513,6 +1668,28 @@ await createApp({
              FROM ${S}.qx_ppmtx_synced_gold_fact_defect f
              JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
              LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON f.reported_date_key = d.dim_date_key
+             WHERE c.chapter IN (${PROP_ATA_LIST})`,
+            [from, to],
+          );
+          // Delay/cancellation KPIs, sourced from qx_ppmtx_gold_fact_defect_delay
+          // (per-event delay/cancellation detail from qx_trax_defect_report_delay)
+          // rather than the rolled-up delay/cancellation columns on fact_defect,
+          // which only reflect the last-known state per defect and undercount/miss
+          // delay events tracked at this finer grain. Joined back to fact_defect on
+          // (defect_type, defect, defect_item) to inherit the same propulsion-only
+          // ATA chapter scoping as the rest of this KPI set.
+          const delayAgg = await executeQuery(
+            req,
+            appkit,
+            `SELECT COUNT(*) FILTER (
+                      WHERE fd.cancellation IS NOT NULL AND TRIM(fd.cancellation) <> '' AND ${inRange}
+                    )::int AS cancel_count,
+                    COALESCE(SUM(fd.delay_minutes) FILTER (WHERE ${inRange}), 0)::int AS total_delay_minutes
+             FROM ${S}.qx_ppmtx_synced_gold_fact_defect_delay fd
+             JOIN ${S}.qx_ppmtx_synced_gold_fact_defect f
+               ON fd.defect_type = f.defect_type AND fd.defect = f.defect AND fd.defect_item = f.defect_item
+             JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON fd.delay_date_key = d.dim_date_key
              WHERE c.chapter IN (${PROP_ATA_LIST})`,
             [from, to],
           );
@@ -1539,13 +1716,14 @@ await createApp({
                AND substring(eo from 6)::int > 4500`,
           );
           const d = defectAgg.rows[0] ?? {};
+          const dl = delayAgg.rows[0] ?? {};
           const l = llpAgg.rows[0] ?? {};
           const e = ecmpAgg.rows[0] ?? {};
           res.json({
             data: {
               activeDefects: Number(d.active_defects) || 0,
-              cancelCount: Number(d.cancel_count) || 0,
-              totalDelayMinutes: Number(d.total_delay_minutes) || 0,
+              cancelCount: Number(dl.cancel_count) || 0,
+              totalDelayMinutes: Number(dl.total_delay_minutes) || 0,
               totalDefects: Number(d.total_defects) || 0,
               llpAlerts: Number(l.llp_alerts) || 0,
               vibrationPireps: Number(d.vibration_pireps) || 0,
@@ -1556,6 +1734,88 @@ await createApp({
         } catch (err) {
           console.warn(`[Lakebase] /api/kpis fallback: ${err}`);
           res.json({ data: MOCK_KPIS, source: "mock" });
+        }
+      });
+
+      // ── Delay/Cancellation event details, backing the Overview "Total Delay
+      // Min" and "Cancellations" KPI dropdowns. Both read from
+      // qx_ppmtx_synced_gold_fact_defect_delay (the same authoritative source
+      // as the KPI totals above) joined back to qx_ppmtx_synced_gold_fact_defect
+      // for the write-up narrative and propulsion-only ATA scoping, and to
+      // dim_aircraft for the tail number. Each endpoint only returns rows that
+      // actually contribute to its KPI (delay_minutes > 0 / cancellation
+      // non-blank) so the detail list always reconciles with the number shown
+      // on the card above it, and the two dropdowns can be empty/populated
+      // independently of one another.
+      const delayCancelDetailSql = (filterClause: string) => `
+        SELECT d.calendar_date::text AS event_date,
+               a.ac,
+               fd.station,
+               COALESCE(NULLIF(TRIM(f.defect_description), ''), NULLIF(TRIM(fd.delay_reason), '')) AS write_up,
+               fd.delay_minutes::int AS delay_minutes,
+               fd.cancellation AS cancellation
+        FROM ${S}.qx_ppmtx_synced_gold_fact_defect_delay fd
+        JOIN ${S}.qx_ppmtx_synced_gold_fact_defect f
+          ON fd.defect_type = f.defect_type AND fd.defect = f.defect AND fd.defect_item = f.defect_item
+        JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
+        LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_aircraft a ON fd.dim_aircraft_key = a.dim_aircraft_key
+        LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON fd.delay_date_key = d.dim_date_key
+        WHERE c.chapter IN (${PROP_ATA_LIST})
+          AND ($1::date IS NULL OR d.calendar_date >= $1::date)
+          AND ($2::date IS NULL OR d.calendar_date <= $2::date)
+          AND ${filterClause}
+        ORDER BY d.calendar_date DESC NULLS LAST
+        LIMIT 100`;
+
+      app.get("/api/delays/detail", async (req: Request, res: Response) => {
+        const from = parseDateParam(req.query.from);
+        const to = parseDateParam(req.query.to);
+        try {
+          const result = await executeQuery(
+            req,
+            appkit,
+            delayCancelDetailSql("fd.delay_minutes > 0"),
+            [from, to],
+          );
+          res.json({
+            data: result.rows.map((r: any) => ({
+              date: r.event_date,
+              ac: r.ac ?? "Unknown",
+              station: r.station ?? "",
+              writeUp: r.write_up ?? "",
+              delayMinutes: Number(r.delay_minutes) || 0,
+            })),
+            source: "live",
+          });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/delays/detail fallback: ${err}`);
+          res.json({ data: MOCK_DELAY_DETAILS, source: "mock" });
+        }
+      });
+
+      app.get("/api/cancellations/detail", async (req: Request, res: Response) => {
+        const from = parseDateParam(req.query.from);
+        const to = parseDateParam(req.query.to);
+        try {
+          const result = await executeQuery(
+            req,
+            appkit,
+            delayCancelDetailSql("fd.cancellation IS NOT NULL AND TRIM(fd.cancellation) <> ''"),
+            [from, to],
+          );
+          res.json({
+            data: result.rows.map((r: any) => ({
+              date: r.event_date,
+              ac: r.ac ?? "Unknown",
+              station: r.station ?? "",
+              writeUp: r.write_up ?? "",
+              reason: r.cancellation ?? "",
+            })),
+            source: "live",
+          });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/cancellations/detail fallback: ${err}`);
+          res.json({ data: MOCK_CANCEL_DETAILS, source: "mock" });
         }
       });
 
