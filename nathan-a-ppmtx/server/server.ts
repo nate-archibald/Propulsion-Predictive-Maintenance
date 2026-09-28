@@ -705,9 +705,20 @@ await createApp({
             [from, to],
           );
 
-          type DetailEntry = { ata: string; top3: { desc: string; count: number }[]; recentDesc: string; recentDate: string };
+          type DetailEntry = {
+            ata: string;
+            top3: { desc: string; count: number }[];
+            recentDesc: string;
+            recentDate: string;
+            // Full list of defects for the timeframe, most recent first. Used by
+            // the ATA hover tooltip to list defects individually.
+            defects: { desc: string; date: string }[];
+          };
           const tagCounts = new Map<string, Map<string, number>>();
           const recent = new Map<string, { desc: string; date: string }>();
+          // Rows arrive ordered by calendar_date DESC, so pushing preserves
+          // most-recent-first order per ATA.
+          const defectsByAta = new Map<string, { desc: string; date: string }[]>();
           for (const row of result.rows) {
             const ata = row.ata as string;
             const desc = row.defect_description as string | null;
@@ -716,10 +727,13 @@ await createApp({
             if (!tagCounts.has(ata)) tagCounts.set(ata, new Map());
             const counts = tagCounts.get(ata)!;
             counts.set(tag, (counts.get(tag) ?? 0) + 1);
+            const entry = { desc, date: (row.calendar_date as string) || "" };
+            if (!defectsByAta.has(ata)) defectsByAta.set(ata, []);
+            defectsByAta.get(ata)!.push(entry);
             // Rows are ordered by calendar_date DESC, so the first row seen
             // per ATA is the most recent defect.
             if (!recent.has(ata)) {
-              recent.set(ata, { desc, date: (row.calendar_date as string) || "" });
+              recent.set(ata, entry);
             }
           }
 
@@ -735,6 +749,7 @@ await createApp({
               top3,
               recentDesc: recentEntry?.desc ?? "",
               recentDate: recentEntry?.date ?? "",
+              defects: defectsByAta.get(ata) ?? [],
             });
           }
           res.json({ data: Array.from(map.values()), source: "live" });

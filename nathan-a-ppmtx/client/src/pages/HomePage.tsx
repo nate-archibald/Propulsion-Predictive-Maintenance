@@ -6,7 +6,6 @@ import {
   CardHeader,
   CardTitle,
   Skeleton,
-  LineChart,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -42,7 +41,7 @@ import {
   type FleetLeadersData,
 } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
-import { KpiCard, Toggle } from "../components/qx-ui";
+import { KpiCard, Toggle, CancelReasonBadge } from "../components/qx-ui";
 
 
 function LeaderCard({
@@ -116,6 +115,21 @@ function useChartVarColors(vars: string[]): string[] {
 function toISODate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
+// Formats a YYYY-MM-DD string as "Mon D, YYYY" for display in KPI dropdown
+// subheadings, without timezone drift (parsed as local calendar date, not UTC).
+function formatDisplayDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+// Compact "M/D" axis-label format (e.g. "7/19"), no leading zeros/year.
+function formatShortDate(iso: string): string {
+  const [, m, d] = iso.split("-").map(Number);
+  return `${m}/${d}`;
+}
 const DATE_PRESETS: { label: string; days: number }[] = [
   { label: "7d", days: 7 },
   { label: "30d", days: 30 },
@@ -125,9 +139,14 @@ const DATE_PRESETS: { label: string; days: number }[] = [
 export default function HomePage() {
   const navigate = useNavigate();
   // Timeframe filter — scopes the Total Delay Min / Cancellations / Vibration
-  // PIREPs KPIs and the Defects-by-ATA chart. Empty = all-time (current default).
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  // PIREPs KPIs and the Defects-by-ATA chart. Defaults to the last 7 days on
+  // load (empty = all-time, still selectable by clearing the filter).
+  const [fromDate, setFromDate] = useState(() => {
+    const from = new Date();
+    from.setDate(from.getDate() - 7);
+    return toISODate(from);
+  });
+  const [toDate, setToDate] = useState(() => toISODate(new Date()));
   const applyDatePreset = (days: number) => {
     const to = new Date();
     const from = new Date();
@@ -137,9 +156,10 @@ export default function HomePage() {
   };
   const [sparesType, setSparesType] = useState<"ENGINE" | "APU">("ENGINE");
   const [selectedAta, setSelectedAta] = useState<string>("");
-  const chartVarColors = useChartVarColors(["--chart-1", "--chart-3"]);
+  const chartVarColors = useChartVarColors(["--chart-1", "--chart-3", "--chart-2"]);
   const ataBaseColor = chartVarColors[0] || "oklch(0.65 0.14 175)";
   const ataHighlightColor = chartVarColors[1] || "oklch(0.65 0.22 25)";
+  const weeklyTrendLineColor = chartVarColors[2] || "oklch(0.6 0.15 250)";
   
   // Critical spares — fetched from live API
   const criticalSpares = useLakebaseData<Array<{
@@ -155,6 +175,15 @@ export default function HomePage() {
     return s ? `?${s}` : "";
   })();
   const hasRange = Boolean(fromDate || toDate);
+  // Human-readable range for the delay/cancellation dropdown subheadings,
+  // e.g. "Sep 15 – Sep 22, 2026" or "Since Jan 1, 2026" / "Through Sep 22, 2026"
+  // if only one bound is set.
+  const rangeLabel = (() => {
+    if (fromDate && toDate) return `${formatDisplayDate(fromDate)} – ${formatDisplayDate(toDate)}`;
+    if (fromDate) return `Since ${formatDisplayDate(fromDate)}`;
+    if (toDate) return `Through ${formatDisplayDate(toDate)}`;
+    return "All-time";
+  })();
 
   const { data: kpiRows, source: kpiSource } = useLakebaseData<{
     activeDefects: number;
@@ -172,9 +201,12 @@ export default function HomePage() {
     delayMinutes: number;
     cancels: number;
   }>(`/api/defects/by-ata${dateQs}`);
-  const { data: trend } = useLakebaseData<{ week: string; count: number }>(
-    "/api/defects/weekly-trend"
-  );
+  const { data: trend } = useLakebaseData<{
+    week: string;
+    weekLabel?: string;
+    count: number;
+    delayMinutes?: number;
+  }>("/api/defects/weekly-trend");
   const { data: sparesData, source: sparesSource } = useLakebaseData<{
     total: number;
     esns: string[];
@@ -189,6 +221,7 @@ export default function HomePage() {
     top3: { desc: string; count: number }[];
     recentDesc: string;
     recentDate: string;
+    defects: { desc: string; date: string }[];
   }>(`/api/defects/by-ata/detail${dateQs}`);
 
   const { data: ecmpDetails } = useLakebaseData<{
@@ -196,6 +229,22 @@ export default function HomePage() {
     description: string;
     ac: string;
   }>("/api/ecmp/open");
+
+  const { data: delayDetails } = useLakebaseData<{
+    date: string;
+    ac: string;
+    station: string;
+    writeUp: string;
+    delayMinutes: number;
+  }>(`/api/delays/detail${dateQs}`);
+
+  const { data: cancelDetails } = useLakebaseData<{
+    date: string;
+    ac: string;
+    station: string;
+    writeUp: string;
+    reason: string;
+  }>(`/api/cancellations/detail${dateQs}`);
 
   const kpi = kpiRows[0];
   // Only show the full-page skeleton on the very first load; once we have data,
@@ -212,13 +261,29 @@ export default function HomePage() {
   // Build a lookup map for the rich ATA tooltip
   const ataDetailMap = new Map(byAtaDetail.map((d) => [d.ata, d]));
 
-  // ECharts tooltip formatter — shows total count, top-3 defects, most recent
+  // Whether the selected timeframe spans 7 days or fewer. When it does, the ATA
+  // tooltip lists every defect; otherwise it caps the list at the last 3 so the
+  // popup stays a manageable size.
+  const ataRangeDays = (() => {
+    if (!fromDate || !toDate) return Infinity;
+    const ms = new Date(toDate).getTime() - new Date(fromDate).getTime();
+    return Number.isFinite(ms) ? ms / 86_400_000 : Infinity;
+  })();
+  const showAllAtaDefects = ataRangeDays <= 7;
+
+  // Minimal HTML escape so full defect descriptions render safely in the tooltip.
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // ECharts tooltip formatter — shows the ATA total plus a list of individual
+  // defects for the timeframe (all defects when the range is ≤ 7 days, else the
+  // last 3 most-recent defects).
   const ataTooltipOptions: Record<string, unknown> = {
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
       confine: true,
-      extraCssText: "white-space:normal;max-width:320px;",
+      extraCssText: "white-space:normal;max-width:460px;",
       formatter: (params: unknown[]) => {
         const p = (params as Array<{ name: string; value: number; seriesName: string }>)[0];
         if (!p) return "";
@@ -226,26 +291,22 @@ export default function HomePage() {
         const ataRow = ataData.find((d) => d.ata === p.name);
         const desc = ataRow?.description ?? "";
 
-        let html = `<div style="width:280px;font-size:12px;white-space:normal;word-wrap:break-word;overflow-wrap:break-word;">`;
+        let html = `<div style="width:420px;font-size:12px;white-space:normal;word-wrap:break-word;overflow-wrap:break-word;">`;
         html += `<div style="font-weight:700;margin-bottom:4px">${p.name}${desc ? ` — ${desc}` : ""}</div>`;
         html += `<div style="margin-bottom:8px;color:#888">Total defects: <strong>${p.value}</strong></div>`;
 
-        if (detail?.top3?.length) {
-          html += `<div style="font-weight:600;margin-bottom:4px">Top 3 defect types</div>`;
-          detail.top3.forEach((t, i) => {
-            html += `<div style="margin-bottom:2px">${i + 1}. ${t.desc} <span style="color:#888">(${t.count})</span></div>`;
-          });
-        }
+        const allDefects = detail?.defects ?? [];
+        const shown = showAllAtaDefects ? allDefects : allDefects.slice(0, 3);
+        const listLabel = showAllAtaDefects ? "Defects" : "Last 3 defects";
 
-        if (detail?.recentDesc || detail?.recentDate) {
-          html += `<div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd;font-weight:600">Most recent</div>`;
-          if (detail.recentDate) {
-            html += `<div style="color:#888;margin-bottom:2px">${detail.recentDate}</div>`;
-          }
-          if (detail.recentDesc) {
-            const truncated = detail.recentDesc.length > 90 ? detail.recentDesc.slice(0, 87) + "…" : detail.recentDesc;
-            html += `<div>${truncated}</div>`;
-          }
+        html += `<div style="font-weight:600;margin-bottom:4px">${listLabel}</div>`;
+        if (shown.length) {
+          shown.forEach((dfct) => {
+            const dateStr = dfct.date ? `<span style="color:#888">${escapeHtml(dfct.date)}</span> — ` : "";
+            html += `<div style="margin-bottom:4px">${dateStr}${escapeHtml(dfct.desc)}</div>`;
+          });
+        } else {
+          html += `<div style="color:#888">No defects in this timeframe</div>`;
         }
 
         html += `</div>`;
@@ -286,6 +347,57 @@ export default function HomePage() {
       if (!name) return;
       setSelectedAta((cur) => (cur === name ? "" : name));
     },
+  };
+  // Weekly Defect Trend: defect count (line) overlaid on weekly delay minutes
+  // (bar, drawn behind the line via z-order) on a shared category x-axis, each
+  // on its own y-axis scale since counts and minutes aren't comparable
+  // magnitudes. Bars use a light, semi-transparent red so they read as
+  // "impact in the background" without competing with the count line.
+  const weeklyTrendOption: Record<string, unknown> = {
+    tooltip: { trigger: "axis" },
+    legend: {
+      data: ["Delay Minutes", "Defect Count"],
+      top: 0,
+      left: "center",
+      textStyle: { fontSize: 11 },
+    },
+    grid: { left: 44, right: 48, top: 64, bottom: 30 },
+    xAxis: {
+      type: "category",
+      data: trendData.map((d) => formatShortDate(String(d.weekLabel ?? d.week))),
+      axisLabel: { fontSize: 11 },
+    },
+    yAxis: [
+      { type: "value", name: "Defects", nameTextStyle: { fontSize: 11 } },
+      {
+        type: "value",
+        name: "Delay (min)",
+        nameTextStyle: { fontSize: 11 },
+        splitLine: { show: false },
+      },
+    ],
+    series: [
+      {
+        name: "Delay Minutes",
+        type: "bar",
+        yAxisIndex: 1,
+        data: trendData.map((d) => d.delayMinutes ?? 0),
+        barMaxWidth: 28,
+        itemStyle: { color: "rgba(239, 68, 68, 0.35)" },
+        z: 1,
+      },
+      {
+        name: "Defect Count",
+        type: "line",
+        yAxisIndex: 0,
+        smooth: false,
+        data: trendData.map((d) => d.count),
+        lineStyle: { color: weeklyTrendLineColor, width: 2 },
+        itemStyle: { color: weeklyTrendLineColor },
+        showSymbol: true,
+        z: 2,
+      },
+    ],
   };
   const selectedAtaRow = selectedAta
     ? ataData.find((d) => d.ata === selectedAta)
@@ -414,28 +526,162 @@ export default function HomePage() {
           testId="metric-vibration-pireps"
           scoped
         />
-        <KpiCard
-          title="Total Delay Min"
-          value={totalDelayMinutes.toLocaleString()}
-          subtitle={
-            hasRange ? "Propulsion-attributable minutes (in range)" : "Propulsion-attributable minutes"
-          }
-          icon={Clock}
-          variant="destructive"
-          testId="metric-delay-minutes"
-          scoped
-        />
-        <KpiCard
-          title="Cancellations"
-          value={cancelCount.toLocaleString()}
-          subtitle={
-            hasRange ? "Propulsion-attributable flights (in range)" : "Propulsion-attributable flights"
-          }
-          icon={Plane}
-          variant="destructive"
-          testId="metric-cancellations"
-          scoped
-        />
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="relative text-left w-full cursor-pointer group"
+              data-testid="metric-delay-minutes-trigger"
+              aria-label="Show delay event details"
+            >
+              <KpiCard
+                title="Total Delay Min"
+                value={totalDelayMinutes.toLocaleString()}
+                subtitle={
+                  hasRange ? "Propulsion-attributable minutes (in range)" : "Propulsion-attributable minutes"
+                }
+                icon={Clock}
+                variant="destructive"
+                testId="metric-delay-minutes"
+                scoped
+              />
+              <ChevronDown className="absolute bottom-3 right-3 h-3.5 w-3.5 text-muted-foreground/60 group-hover:text-foreground transition-colors" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            className="w-[560px] p-0"
+            align="start"
+            side="bottom"
+            avoidCollisions={false}
+          >
+            <div className="px-4 py-3 border-b">
+              <p className="text-sm font-semibold">Delay Events</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {rangeLabel} · propulsion-attributable
+              </p>
+            </div>
+            {delayDetails.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-muted-foreground text-center">
+                No propulsion-attributable delays {hasRange ? "in this range." : "found."}
+              </p>
+            ) : (
+              <div className="max-h-80 overflow-y-auto">
+                <Table className="table-fixed w-full">
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead className="w-[90px]">Date</TableHead>
+                      <TableHead className="w-[75px]">A/C</TableHead>
+                      <TableHead className="w-[65px]">Station</TableHead>
+                      <TableHead>Write-up</TableHead>
+                      <TableHead className="w-[70px] text-right">Delay</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {delayDetails.map((row, i) => (
+                      <TableRow key={`${row.date}-${row.ac}-${i}`}>
+                        <TableCell className="text-xs whitespace-nowrap align-top">{row.date}</TableCell>
+                        <TableCell className="font-mono text-xs whitespace-nowrap align-top">{row.ac}</TableCell>
+                        <TableCell className="font-mono text-xs whitespace-nowrap align-top">{row.station || "—"}</TableCell>
+                        <TableCell
+                          className="text-xs whitespace-normal break-words align-top"
+                          title={row.writeUp}
+                        >
+                          {row.writeUp || "—"}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap align-top text-right font-technical">
+                          {row.delayMinutes.toLocaleString()} min
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {delayDetails.length >= 100 && (
+                  <p className="px-4 py-2 text-[11px] text-muted-foreground border-t">
+                    Showing the 100 most recent events in range.
+                  </p>
+                )}
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="relative text-left w-full cursor-pointer group"
+              data-testid="metric-cancellations-trigger"
+              aria-label="Show cancellation event details"
+            >
+              <KpiCard
+                title="Cancellations"
+                value={cancelCount.toLocaleString()}
+                subtitle={
+                  hasRange ? "Propulsion-attributable flights (in range)" : "Propulsion-attributable flights"
+                }
+                icon={Plane}
+                variant="destructive"
+                testId="metric-cancellations"
+                scoped
+              />
+              <ChevronDown className="absolute bottom-3 right-3 h-3.5 w-3.5 text-muted-foreground/60 group-hover:text-foreground transition-colors" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            className="w-[560px] p-0"
+            align="start"
+            side="bottom"
+            avoidCollisions={false}
+          >
+            <div className="px-4 py-3 border-b">
+              <p className="text-sm font-semibold">Cancellation Events</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {rangeLabel} · propulsion-attributable
+              </p>
+            </div>
+            {cancelDetails.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-muted-foreground text-center">
+                No propulsion-attributable cancellations {hasRange ? "in this range." : "found."}
+              </p>
+            ) : (
+              <div className="max-h-80 overflow-y-auto">
+                <Table className="table-fixed w-full">
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead className="w-[90px]">Date</TableHead>
+                      <TableHead className="w-[75px]">A/C</TableHead>
+                      <TableHead className="w-[65px]">Station</TableHead>
+                      <TableHead>Write-up</TableHead>
+                      <TableHead className="w-[90px]">Reason</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {cancelDetails.map((row, i) => (
+                      <TableRow key={`${row.date}-${row.ac}-${i}`}>
+                        <TableCell className="text-xs whitespace-nowrap align-top">{row.date}</TableCell>
+                        <TableCell className="font-mono text-xs whitespace-nowrap align-top">{row.ac}</TableCell>
+                        <TableCell className="font-mono text-xs whitespace-nowrap align-top">{row.station || "—"}</TableCell>
+                        <TableCell
+                          className="text-xs whitespace-normal break-words align-top"
+                          title={row.writeUp}
+                        >
+                          {row.writeUp || "—"}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <CancelReasonBadge reason={row.reason} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {cancelDetails.length >= 100 && (
+                  <p className="px-4 py-2 text-[11px] text-muted-foreground border-t">
+                    Showing the 100 most recent events in range.
+                  </p>
+                )}
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
         <Popover>
           <PopoverTrigger asChild>
             <button
@@ -477,6 +723,7 @@ export default function HomePage() {
                       <TableHead>Description</TableHead>
                       <TableHead className="w-[80px]">AC</TableHead>
                     </TableRow>
+
                   </TableHeader>
                   <TableBody>
                     {ecmpDetails.map((row) => (
@@ -632,16 +879,12 @@ export default function HomePage() {
               <Activity className="h-4 w-4" />
               Weekly Defect Trend
             </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Defect count vs. propulsion-attributable delay minutes, by week
+            </p>
           </CardHeader>
           <CardContent>
-            <LineChart
-              data={trendData}
-              xKey="week"
-              yKey="count"
-              height={280}
-              colors={["var(--chart-2)"]}
-              smooth={false}
-            />
+            <ReactECharts option={weeklyTrendOption} style={{ height: 280 }} notMerge />
           </CardContent>
         </Card>
       </div>
