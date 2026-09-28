@@ -626,6 +626,83 @@ def merge_fact_defect():
 
 # COMMAND ----------
 
+def merge_fact_defect_delay():
+    """Merge fact_defect_delay from Silver defect_report_delay.
+
+    This is the authoritative per-event source for delay minutes and
+    cancellation counts — NOT the rolled-up delay/cancellation columns on
+    fact_defect, which only reflect the last-known state per defect and
+    undercount/miss delay events tracked at this finer grain.
+    """
+    source_table = get_silver_table("qx_ppmtx_defect_report_delay")
+    target_table = get_gold_table("qx_ppmtx_gold_fact_defect_delay")
+    dim_aircraft_table = get_gold_table("qx_ppmtx_gold_dim_aircraft")
+
+    print(f"Merging: {target_table}")
+
+    # Read and deduplicate Silver (id is unique per row, but guard against
+    # any accidental bronze duplicates the same way other merges do).
+    silver_df = (
+        spark.table(source_table)
+        .orderBy(col("modified_date").desc())
+        .dropDuplicates(["id"])
+    )
+
+    # Load dimension lookup
+    dim_ac = spark.table(dim_aircraft_table).select("dim_aircraft_key", "ac")
+
+    # Join and build Gold columns
+    gold_df = (
+        silver_df
+        .join(dim_ac, silver_df["ac"] == dim_ac["ac"], "left")
+        .withColumn("fact_defect_delay_key", silver_df["id"].cast("long"))
+        .withColumn(
+            "delay_date_key",
+            F.when(
+                silver_df["delay_date"].isNotNull(),
+                F.date_format(silver_df["delay_date"].cast("date"), "yyyyMMdd").cast("int")
+            )
+        )
+        .select(
+            "fact_defect_delay_key",
+            col("dim_aircraft_key"),
+            col("delay_date_key"),
+            silver_df["defect_type"],
+            silver_df["defect"],
+            silver_df["defect_item"],
+            silver_df["delay_item"],
+            silver_df["delay_type"],
+            silver_df["delay_hour"],
+            silver_df["delay_minutes"],
+            silver_df["cancellation"],
+            silver_df["canx"],
+            silver_df["delay_reason"],
+            silver_df["delay_code"],
+            silver_df["flight"],
+            silver_df["station"],
+            silver_df["destination"],
+        )
+    )
+
+    # MERGE
+    gold_df.createOrReplaceTempView("source_fact_defect_delay")
+    merge_cols = list(gold_df.columns)
+    update_set = ", ".join([f"target.`{c}` = source.`{c}`" for c in merge_cols])
+
+    spark.sql(f"""
+        MERGE INTO {target_table} AS target
+        USING source_fact_defect_delay AS source
+        ON target.fact_defect_delay_key = source.fact_defect_delay_key
+        WHEN MATCHED THEN UPDATE SET {update_set}
+        WHEN NOT MATCHED THEN INSERT *
+    """)
+
+    count = spark.table(target_table).count()
+    print(f"  ✓ fact_defect_delay: {count} rows")
+    return count
+
+# COMMAND ----------
+
 def merge_bridge_defect_part():
     """Merge bridge_defect_part from Silver defect_report_pn."""
     source_table = get_silver_table("qx_ppmtx_defect_report_pn")
@@ -690,6 +767,129 @@ def merge_bridge_defect_part():
 
     count = spark.table(target_table).count()
     print(f"  ✓ bridge_defect_part: {count} rows")
+    return count
+
+
+# COMMAND ----------
+
+def merge_bridge_part_interchangeable():
+    """Merge bridge_part_interchangeable from Silver two-way + one-way sources.
+
+    Directed-pair bridge (base pn -> interchangeable pn):
+      * two-way source (qx_ppmtx_pn_interchangeable): emit BOTH directions
+      * one-way source (qx_ppmtx_pn_interchg_one_way): emit base->alt ONLY
+    Self-pairs are dropped. Each directed pair is deduped, preferring two_way
+    over one_way (then most recently modified). Both PNs are LEFT-joined to
+    dim_part; the alternate may not exist in pn_master, so its key is nullable.
+    """
+    two_way_table = get_silver_table("qx_ppmtx_pn_interchangeable")
+    one_way_table = get_silver_table("qx_ppmtx_pn_interchg_one_way")
+    target_table = get_gold_table("qx_ppmtx_gold_bridge_part_interchangeable")
+    dim_part_table = get_gold_table("qx_ppmtx_gold_dim_part")
+
+    print(f"Merging: {target_table}")
+
+    def _norm(df):
+        # Normalize the PN key columns (trim) and drop self / empty pairs.
+        return (
+            df.withColumn("pn", F.trim(col("pn")))
+              .withColumn("pn_interchangeable", F.trim(col("pn_interchangeable")))
+              .filter(col("pn").isNotNull() & col("pn_interchangeable").isNotNull())
+              .filter(F.length(col("pn")) > 0)
+              .filter(F.length(col("pn_interchangeable")) > 0)
+              .filter(col("pn") != col("pn_interchangeable"))
+        )
+
+    # ── Two-way: both directions ───────────────────────────────────────
+    tw = _norm(spark.table(two_way_table))
+    tw_fwd = tw.select(
+        col("pn"), col("pn_interchangeable"),
+        lit("two_way").alias("interchange_class"),
+        col("interchangeable_type"), col("prefer"),
+        col("manufacturer"), col("vendor"), col("status").alias("source_status"),
+        col("modified_date"),
+    )
+    tw_rev = tw.select(
+        col("pn_interchangeable").alias("pn"), col("pn").alias("pn_interchangeable"),
+        lit("two_way").alias("interchange_class"),
+        col("interchangeable_type"), col("prefer"),
+        col("manufacturer"), col("vendor"), col("status").alias("source_status"),
+        col("modified_date"),
+    )
+
+    # ── One-way: stated direction only ─────────────────────────────────
+    ow = _norm(spark.table(one_way_table))
+    ow_fwd = ow.select(
+        col("pn"), col("pn_interchangeable"),
+        lit("one_way").alias("interchange_class"),
+        col("interchangeable_type"), col("prefer"),
+        lit(None).cast("string").alias("manufacturer"),
+        col("vendor"), lit(None).cast("string").alias("source_status"),
+        col("modified_date"),
+    )
+
+    pairs = tw_fwd.unionByName(tw_rev).unionByName(ow_fwd)
+
+    # Dedupe per directed pair: prefer two_way, then most recently modified.
+    dedup_win = Window.partitionBy("pn", "pn_interchangeable").orderBy(
+        F.when(col("interchange_class") == "two_way", 0).otherwise(1).asc(),
+        col("modified_date").desc_nulls_last(),
+    )
+    deduped = (
+        pairs.withColumn("_rn", row_number().over(dedup_win))
+             .filter(col("_rn") == 1)
+             .drop("_rn")
+    )
+
+    # Resolve both sides to dim_part keys.
+    dim_base = spark.table(dim_part_table).select(
+        col("dim_part_key"), col("pn").alias("_base_pn")
+    )
+    dim_alt = spark.table(dim_part_table).select(
+        col("dim_part_key").alias("dim_part_key_interchangeable"),
+        col("pn").alias("_alt_pn"),
+    )
+
+    gold_df = (
+        deduped
+        .join(dim_base, deduped["pn"] == dim_base["_base_pn"], "left")
+        .join(dim_alt, deduped["pn_interchangeable"] == dim_alt["_alt_pn"], "left")
+        .withColumn(
+            "bridge_part_interchangeable_key",
+            F.xxhash64(concat_ws("||", col("pn"), col("pn_interchangeable"))),
+        )
+        .select(
+            "bridge_part_interchangeable_key",
+            "dim_part_key",
+            "dim_part_key_interchangeable",
+            "pn",
+            "pn_interchangeable",
+            "interchange_class",
+            "interchangeable_type",
+            "prefer",
+            "manufacturer",
+            "vendor",
+            "source_status",
+            "modified_date",
+        )
+    )
+
+    # MERGE on the directed natural pair.
+    gold_df.createOrReplaceTempView("source_bridge_part_interchangeable")
+    merge_cols = [c for c in gold_df.columns if c not in ("pn", "pn_interchangeable")]
+    update_set = ", ".join([f"target.`{c}` = source.`{c}`" for c in merge_cols])
+
+    spark.sql(f"""
+        MERGE INTO {target_table} AS target
+        USING source_bridge_part_interchangeable AS source
+        ON target.pn = source.pn
+           AND target.pn_interchangeable = source.pn_interchangeable
+        WHEN MATCHED THEN UPDATE SET {update_set}
+        WHEN NOT MATCHED THEN INSERT *
+    """)
+
+    count = spark.table(target_table).count()
+    print(f"  ✓ bridge_part_interchangeable: {count} rows")
     return count
 
 # COMMAND ----------
@@ -827,6 +1027,7 @@ def merge_fact_inventory_snapshot():
             silver_df["location"],
             silver_df["installed_ac"],
             silver_df["installed_position"],
+            silver_df["bin"],
         )
     )
 
@@ -1384,6 +1585,7 @@ results["dim_date"] = merge_dim_date()
 print("\n--- Phase 2: Facts ---")
 results["fact_component_removal"] = merge_fact_component_removal()
 results["fact_defect"] = merge_fact_defect()
+results["fact_defect_delay"] = merge_fact_defect_delay()
 results["fact_inventory_transaction"] = merge_fact_inventory_transaction()
 results["fact_inventory_snapshot"] = merge_fact_inventory_snapshot()
 results["fact_inventory_control"] = merge_fact_inventory_control()
@@ -1396,6 +1598,7 @@ results["fact_engineering_order"] = merge_fact_engineering_order()
 # Phase 3: Bridges (depend on facts + dimensions)
 print("\n--- Phase 3: Bridges ---")
 results["bridge_defect_part"] = merge_bridge_defect_part()
+results["bridge_part_interchangeable"] = merge_bridge_part_interchangeable()
 
 # COMMAND ----------
 

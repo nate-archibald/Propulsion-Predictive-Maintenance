@@ -198,3 +198,13 @@ columns:
       silver_column: installed_position
       transformation: DIRECT_COPY
       transformation_logic: "installed_position"
+
+  - name: bin
+    data_type: STRING
+    nullable: true
+    description: "Warehouse bin location. Business: the physical bin the part sits in; 'R/I BIN' means the unit has returned from repair and is awaiting receiving/inspection (a spare pending inspection, not yet serviceable). Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_inventory_detail
+      silver_column: bin
+      transformation: DIRECT_COPY
+      transformation_logic: "bin"

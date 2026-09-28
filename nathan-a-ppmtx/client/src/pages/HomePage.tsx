@@ -210,6 +210,8 @@ export default function HomePage() {
   const { data: sparesData, source: sparesSource } = useLakebaseData<{
     total: number;
     esns: string[];
+    pendingTotal: number;
+    pendingEsns: string[];
     type: string;
   }>(`/api/serviceable-spares?type=${sparesType}`);
   const { data: fleetLeadersResp, source: fleetLeadersSource } = useLakebaseData<FleetLeadersData>(
@@ -911,32 +913,65 @@ export default function HomePage() {
               aria-label="Serviceable spares: Engines or APUs"
             />
             {/* Total Count (inline with toggle to save vertical space) */}
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl font-bold font-technical">
-                {sparesData?.[0]?.total ?? 0}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {sparesType === "ENGINE" ? "engines" : "APUs"} available
-              </span>
+            <div className="flex flex-col items-end leading-tight">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-bold font-technical">
+                  {sparesData?.[0]?.total ?? 0}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {sparesType === "ENGINE" ? "engines" : "APUs"} available
+                </span>
+              </div>
+              {(sparesData?.[0]?.pendingTotal ?? 0) > 0 && (
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-base font-semibold font-technical text-amber-600">
+                    {sparesData[0].pendingTotal}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {sparesType === "ENGINE" ? "engines" : "APUs"} pending
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* ESN / SN List */}
-          {sparesData?.[0]?.esns && sparesData[0].esns.length > 0 ? (
-            <div className="border rounded-md bg-muted/50 p-2.5 max-h-36 overflow-y-auto">
-              <p className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wider">
-                {sparesType === "ENGINE" ? "Engine ESNs" : "APU SNs"}
-              </p>
-              <div className="space-y-1">
-                {sparesData[0].esns.map((esn) => (
-                  <div
-                    key={esn}
-                    className="text-sm font-mono p-1 hover:bg-background rounded"
-                  >
-                    {esn}
+          {/* ESN / SN List — Available + Pending inspection (R/I BIN) */}
+          {(sparesData?.[0]?.esns?.length ?? 0) > 0 || (sparesData?.[0]?.pendingEsns?.length ?? 0) > 0 ? (
+            <div className="space-y-2">
+              {(sparesData?.[0]?.esns?.length ?? 0) > 0 && (
+                <div className="border rounded-md bg-muted/50 p-2.5 max-h-36 overflow-y-auto">
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wider">
+                    Available — {sparesType === "ENGINE" ? "Engine ESNs" : "APU SNs"}
+                  </p>
+                  <div className="space-y-1">
+                    {sparesData[0].esns.map((esn) => (
+                      <div
+                        key={esn}
+                        className="text-sm font-mono p-1 hover:bg-background rounded"
+                      >
+                        {esn}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
+              {(sparesData?.[0]?.pendingEsns?.length ?? 0) > 0 && (
+                <div className="border border-amber-300 rounded-md bg-amber-50/60 p-2.5 max-h-36 overflow-y-auto">
+                  <p className="text-xs font-medium text-amber-700 mb-1.5 uppercase tracking-wider">
+                    Pending inspection — R/I BIN
+                  </p>
+                  <div className="space-y-1">
+                    {sparesData[0].pendingEsns.map((esn) => (
+                      <div
+                        key={esn}
+                        className="text-sm font-mono p-1 hover:bg-background rounded"
+                      >
+                        {esn}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="border rounded-md bg-muted/50 p-2.5 text-sm text-muted-foreground text-center">

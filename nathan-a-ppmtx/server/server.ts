@@ -1407,32 +1407,44 @@ await createApp({
           // Spares are whole engines/APUs that are:
           // 1. Not currently installed (installed_ac IS NULL)
           // 2. Not on an active RO (order_type='RO' AND status='OPEN')
+          //
+          // A unit sitting in the "R/I BIN" has come back from repair but has not
+          // yet been received/inspected, so it is not yet serviceable — surface it
+          // separately as "pending inspection" rather than as an available spare.
           const result = await executeQuery(
             req,
             appkit,
             `WITH spare_candidates AS (
-               SELECT DISTINCT fs.sn
+               SELECT fs.sn,
+                      bool_or(upper(trim(coalesce(fs.bin, ''))) = 'R/I BIN') AS is_pending
                FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot fs
                JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON fs.dim_part_key = p.dim_part_key
                WHERE ${pnFilter}
                  AND fs.installed_ac IS NULL
+               GROUP BY fs.sn
              ),
              no_active_ro AS (
-               SELECT sc.sn
+               SELECT sc.sn, sc.is_pending
                FROM spare_candidates sc
                LEFT JOIN ${S}.qx_ppmtx_synced_gold_fact_order fo ON sc.sn = fo.sn
                  AND fo.order_type = 'RO' AND fo.status = 'OPEN'
                WHERE fo.fact_order_key IS NULL
              )
-             SELECT array_agg(sn ORDER BY sn)::text[] AS esns, count(*)::int AS total
+             SELECT
+               array_agg(sn ORDER BY sn) FILTER (WHERE NOT is_pending)::text[] AS esns,
+               count(*) FILTER (WHERE NOT is_pending)::int AS total,
+               array_agg(sn ORDER BY sn) FILTER (WHERE is_pending)::text[] AS pending_esns,
+               count(*) FILTER (WHERE is_pending)::int AS pending_total
              FROM no_active_ro`,
           );
           
-          const row = result.rows[0] || { esns: [], total: 0 };
+          const row = result.rows[0] || { esns: [], total: 0, pending_esns: [], pending_total: 0 };
           res.json({
             data: {
               total: Number(row.total) || 0,
               esns: Array.isArray(row.esns) ? row.esns.filter((e: any) => e != null) : [],
+              pendingTotal: Number(row.pending_total) || 0,
+              pendingEsns: Array.isArray(row.pending_esns) ? row.pending_esns.filter((e: any) => e != null) : [],
               type: type,
             },
             source: "live",
@@ -1440,7 +1452,7 @@ await createApp({
         } catch (err) {
           console.warn(`[Lakebase] /api/serviceable-spares fallback: ${err}`);
           res.json({
-            data: { total: 0, esns: [], type: type },
+            data: { total: 0, esns: [], pendingTotal: 0, pendingEsns: [], type: type },
             source: "mock",
           });
         }
