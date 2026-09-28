@@ -299,10 +299,10 @@ export default function HomePage() {
         const shown = showAllAtaDefects ? allDefects : allDefects.slice(0, 3);
         const listLabel = showAllAtaDefects ? "Defects" : "Last 3 defects";
 
-        html += `<div style="font-weight:600;margin-bottom:4px">${listLabel}</div>`;
+        html += `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#999;margin-bottom:5px">${listLabel}</div>`;
         if (shown.length) {
           shown.forEach((dfct) => {
-            const dateStr = dfct.date ? `<span style="color:#888">${escapeHtml(dfct.date)}</span> — ` : "";
+            const dateStr = dfct.date ? `<span style="font-weight:700">${escapeHtml(dfct.date)}</span> — ` : "";
             html += `<div style="margin-bottom:4px">${dateStr}${escapeHtml(dfct.desc)}</div>`;
           });
         } else {
@@ -800,7 +800,7 @@ export default function HomePage() {
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Click a bar to drill into an ATA section
+              Hover over an ATA section for more detail
             </p>
           </CardHeader>
           <CardContent>

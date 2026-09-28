@@ -1528,21 +1528,21 @@ await createApp({
         // actual units tracked in our system.
         const partMap: Record<string, string[]> = {
           "FADEC": ["4120T00P60", "4120T00P63"],
-          "FMU": ["4120T01P02"],
-          "SEAL PRV": ["421645-2"],
+          "FMU": ["4120T01P02", "8061-926"],
+          "SEAL PRV": ["421645-2", "4123T61P03"],
           "ENG FUEL PUMP": ["829500-7", "829500-9"],
-          "ENG OBV": ["5080046-103"],
-          "ENG ATS": ["4120T06P10"],
-          "APU ANTI-SURGE VALVE": ["4954226"],
+          "ENG OBV": ["5080046-103", "4123T71P06"],
+          "ENG ATS": ["4120T06P10", "3505953-6"],
+          "APU ANTI-SURGE VALVE": ["4954226", "4953195-1"],
           "T2 AIR TEMP SENSOR": ["4119T30P07"],
           "APU INLET SILENCER": ["4953193"],
           "APU ESC": ["4508022", "4954309"],
           "APU FUEL MODULE ASSY": ["4505008G", "4505008H"],
-          "ENG IGNITION EXCITER": ["9238M66P11"],
+          "ENG IGNITION EXCITER": ["9238M66P11", "10-631045-3"],
           "ENG FUEL LOW PRESSURE SWITCH": ["1103P1114-01"],
           "OIL LEVEL TANK INDICATOR": ["4121T65P02"],
           "APU BSG": ["4952826"],
-          "ENG SCV": ["4120T05P04"],
+          "ENG SCV": ["4120T05P04", "3291339-4"],
           "APU FADEC": ["4505003M"],
         };
 
