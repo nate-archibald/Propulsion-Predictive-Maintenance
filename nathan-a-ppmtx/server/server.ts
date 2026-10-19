@@ -7,6 +7,7 @@ import {
   MOCK_PARTS,
   MOCK_SPARES,
   MOCK_ENGINES,
+  MOCK_HSR,
   MOCK_APUS,
   MOCK_KPIS,
   MOCK_FLEET_LEADERS,
@@ -21,6 +22,7 @@ import {
   mapPart,
   mapSpare,
   mapEngine,
+  mapHsrEngine,
   mapAPU,
 } from "./mappers.js";
 
@@ -91,6 +93,44 @@ const ENGINE_PN = "CF34-8E5G01";
 const APU_PNS = ["4503067A", "4505001B"];
 const APU_SQL_LIST = APU_PNS.map((pn) => `'${pn.replace(/'/g, "''")}'`).join(", ");
 
+// ── Life-Limited Part (LLP) catalog ──────────────────────────────────
+// Authoritative hard cycle life-limits per part number, supplied by engineering.
+// This is the SOURCE OF TRUTH for Life Limit (not the DB schedule_cycles).
+// Listed alternate P/Ns are included as their own entries with their own limit.
+// Time Remaining is derived as (life limit − CSN) per serialized instance.
+// Powers the Parts-page /api/llp endpoint. If the catalog grows, add rows here.
+const LLP_LIFE_LIMITS: Record<string, number> = {
+  "4114T16G02": 25000,
+  "4118T61P01": 25000,
+  "4129T60P02": 25000,
+  "4128T91G05": 25000,
+  "4129T40P01": 25000,
+  "4129T50G04": 25000,
+  "4129T28P05": 25000,
+  "4124T93P04": 25000,
+  "4124T92P02": 25000,
+  "4125T30P02": 25000,
+  "4125T22P04": 24200,
+  "4125T37P02": 25000,
+  "4125T23P04": 24100,
+  "4124T95P03": 25000,
+  "4118T63P02": 25000,
+  "4117T16P01": 25000,
+  "4117T13P05": 25000,
+  "4117T17P01": 25000,
+  "4118T62P01": 25000,
+  "4117T14P02": 25000,
+  "4117T14P03": 25000, // alternate of 4117T14P02
+  "4117T18P01": 25000,
+  "4117T15P02": 25000,
+  "4180T27G03": 41100,
+  "4180T27G07": 25000, // alternate of 4180T27G03
+  "4129T59P02": 25000,
+};
+const LLP_PN_SQL_LIST = Object.keys(LLP_LIFE_LIMITS)
+  .map((pn) => `'${pn.replace(/'/g, "''")}'`)
+  .join(", ");
+
 function clampLimit(raw: unknown, def: number, max: number): number {
   const n = parseInt(String(raw ?? ""), 10);
   if (!Number.isFinite(n) || n <= 0) return def;
@@ -103,6 +143,24 @@ function parseDateParam(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+// ── In-memory server-side response cache ─────────────────────────────
+// Caches JSON responses from expensive Lakebase queries. Entries expire
+// after SERVER_CACHE_TTL_MS. Fleet engine/APU data changes at most daily
+// so a 90-second TTL is very safe and eliminates redundant full-table scans.
+const responseCache = new Map<string, { body: any; timestamp: number }>();
+const SERVER_CACHE_TTL_MS = 90_000; // 90 seconds
+
+function getCachedResponse(key: string): any | null {
+  const entry = responseCache.get(key);
+  if (entry && Date.now() - entry.timestamp < SERVER_CACHE_TTL_MS) return entry.body;
+  if (entry) responseCache.delete(key); // expired → clean up
+  return null;
+}
+
+function setCachedResponse(key: string, body: any): void {
+  responseCache.set(key, { body, timestamp: Date.now() });
 }
 
 // ── Keyword-based defect classification ──────────────────────────────
@@ -1069,6 +1127,150 @@ await createApp({
         }
       });
 
+      // ── Engine Removal Plan: HSR Data + Projected Removal ──────────────
+      // Reproduces the manual Engine Removal Plan. For each engine:
+      //   • TSHSI (live Time Since HSR) and utilization (hrs/day, cycles/day over
+      //     the last 90 days on its current tail) come from gold
+      //     qx_ppmtx_gold_engine_tshsi (airframe-delta reconstruction — TRAX
+      //     freezes actual_hours at the RS-SOFT reset).
+      //   • The binding LLP = the life-limited part (hung off the engine's
+      //     {esn}LLPS assembly node) with the FEWEST cycles remaining, where
+      //     remaining = authoritative life limit − live CSN.
+      // The projected removal date (whichever of HSR-hours or LLP-cycles runs out
+      // first, converted via utilization) is computed in the mapper so future
+      // removal-order scenarios can re-parameterize it without a DB round-trip.
+      // Sorted most-critical-first (fewest hours to HSR).
+      app.get("/api/removal-plan/hsr", async (req: Request, res: Response) => {
+        const limit = clampLimit(req.query.limit, 300, 2000);
+        const cacheKey = `removal-plan-hsr:${limit}`;
+        const cached = getCachedResponse(cacheKey);
+        if (cached) { res.json(cached); return; }
+        try {
+          const result = await executeQuery(
+            req,
+            appkit,
+            `SELECT t.engine_sn, t.pn, t.reset_date, t.tshsi, t.hsr_target,
+                    t.tshsr_remaining, t.currently_installed,
+                    COALESCE(t.installed_ac, esnap.installed_ac) AS installed_ac,
+                    esnap.installed_position AS position,
+                    t.on_wing_periods, t.hrs_per_day, t.cycles_per_day,
+                    t.util_window_days,
+                    t.min_cyc_remaining, t.binding_llp_pn, t.binding_llp_sn,
+                    t.as_of_date
+             FROM ${S}.qx_ppmtx_synced_gold_engine_tshsi t
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot esnap
+               ON t.engine_sn = esnap.sn
+             ORDER BY t.currently_installed DESC, t.tshsr_remaining ASC NULLS LAST
+             LIMIT $1`,
+            [limit],
+          );
+          const asOf = result.rows.find((r: any) => r.as_of_date)?.as_of_date ?? null;
+          const response = {
+            data: result.rows.map(mapHsrEngine),
+            source: "live",
+            asOf,
+          };
+          setCachedResponse(cacheKey, response);
+          res.json(response);
+        } catch (err) {
+          console.warn(`[Lakebase] /api/removal-plan/hsr fallback: ${err}`);
+          res.json({ data: MOCK_HSR, source: "mock" });
+        }
+      });
+
+      // ── LLP Status (every instance of the engineering LLP catalog) ────
+      // Pulls all serialized instances of the catalogued life-limited P/Ns
+      // (and their listed alternates), computing Life Limit from LLP_LIFE_LIMITS
+      // (authoritative) and Time Remaining = Life Limit − CSN. Default-sorted by
+      // fewest cycles remaining so the most critical units surface first.
+      // Powers the Parts-page LLP Status widget.
+      app.get("/api/llp", async (req: Request, res: Response) => {
+        const limit = clampLimit(req.query.limit, 2000, 5000);
+        const toLLP = (row: Record<string, unknown>): Record<string, unknown> => {
+          const base = mapPart(row);
+          const lifeLimit = LLP_LIFE_LIMITS[String(base.partNumber)] ?? null;
+          const csn = Number(base.csn) || 0;
+          return {
+            ...base,
+            // Installation context (mapPart leaves these blank — resolve from
+            // the inventory snapshot self-join below).
+            engineSN: String(row.engine_sn ?? ""),
+            tail: String(row.tail ?? ""),
+            position: String(row.position ?? ""),
+            isLLP: true,
+            cycleLimit: lifeLimit,
+            cyclesRemaining: lifeLimit != null ? lifeLimit - csn : null,
+          };
+        };
+        const remainingOf = (r: Record<string, unknown>): number =>
+          typeof r.cyclesRemaining === "number" ? r.cyclesRemaining : Infinity;
+        const byRemaining = (a: Record<string, unknown>, b: Record<string, unknown>) =>
+          remainingOf(a) - remainingOf(b);
+        try {
+          const result = await executeQuery(
+            req,
+            appkit,
+            // snap = the LLP part's own install row (gives its engine via nha_sn);
+            // eng = that engine's install row (gives the tail + engine side it sits
+            // on). Position is normalised to ENG-1 (LH)/ENG-2 (RH) to match Engines.
+            `SELECT ic.pn, ic.sn, p.pn_description AS description,
+                    ic.actual_hours, ic.actual_cycles,
+                    snap.nha_sn AS engine_sn,
+                    COALESCE(eng.installed_ac, snap.installed_ac) AS tail,
+                    CASE
+                      WHEN TRIM(COALESCE(eng.installed_position, snap.installed_position)) = 'LH ENG' THEN 'ENG-1'
+                      WHEN TRIM(COALESCE(eng.installed_position, snap.installed_position)) = 'RH ENG' THEN 'ENG-2'
+                      ELSE TRIM(COALESCE(eng.installed_position, snap.installed_position))
+                    END AS position,
+                    plt.live_tso, plt.baseline_tso_hours, plt.flight_hours_since_reset
+             FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot snap ON snap.sn = ic.sn
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot eng ON eng.sn = snap.nha_sn
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_part_live_tso plt ON ic.sn = plt.sn AND ic.pn = plt.pn
+             WHERE ic.pn IN (${LLP_PN_SQL_LIST})
+             LIMIT $1`,
+            [limit],
+          );
+          const rows = (result as { rows: Record<string, unknown>[] }).rows;
+          const data = rows.map(toLLP).sort(byRemaining);
+          res.json({ data, source: "live" });
+        } catch (err) {
+          console.warn(`[Lakebase] /api/llp fallback: ${err}`);
+          // Synthesize deterministic instances from the catalog so the widget
+          // still renders (and exercises every colour band) when Lakebase is down.
+          const mock = Object.entries(LLP_LIFE_LIMITS)
+            .flatMap(([pn, ll], idx) =>
+              [0, 1].map((k) => {
+                const consumedPct = 0.6 + (((idx * 7 + k * 13) % 42) / 100); // 60–99%
+                const csn = Math.round(ll * consumedPct);
+                const tailNum = 400 + ((idx + k) % 12);
+                return {
+                  partNumber: pn,
+                  serialNumber: `${pn}-SN${k + 1}`,
+                  description: "Life-Limited Part",
+                  engineSN: `ESN-${31000 + idx * 2 + k}`,
+                  tail: `N${tailNum}QX`,
+                  position: k === 0 ? "ENG-1" : "ENG-2",
+                  condition: "",
+                  location: "",
+                  tsn: Math.round(csn * 1.4),
+                  csn,
+                  tso: 0,
+                  csi: 0,
+                  installDate: "",
+                  ata: "",
+                  isLLP: true,
+                  cycleLimit: ll,
+                  cyclesRemaining: ll - csn,
+                };
+              }),
+            )
+            .sort(byRemaining);
+          res.json({ data: mock, source: "mock" });
+        }
+      });
+
       // ── Interchangeable P/Ns for a given part ─────────────────────────
       // Returns every part number interchangeable with :pn (two-way + one-way),
       // preferred + two-way first. Powers the Parts-page detail panel and any
@@ -1134,6 +1336,9 @@ await createApp({
       // ── Engines (fleet aircraft) ─────────────────────────────────────
       app.get("/api/engines", async (req: Request, res: Response) => {
         const limit = clampLimit(req.query.limit, 200, 2000);
+        const cacheKey = `engines:${limit}`;
+        const cached = getCachedResponse(cacheKey);
+        if (cached) { res.json(cached); return; }
         try {
           const result = await executeQuery(
             req,
@@ -1189,11 +1394,13 @@ await createApp({
           // frozen fact_inventory_control value for any SN not yet reconstructed.
           const liveTimesAsOf = result.rows.find((r: any) => r.live_times_as_of)
             ?.live_times_as_of ?? null;
-          res.json({
+          const engineResponse = {
             data: result.rows.map(mapEngine),
             source: "live",
             liveTimesAsOf,
-          });
+          };
+          setCachedResponse(cacheKey, engineResponse);
+          res.json(engineResponse);
         } catch (err) {
           console.warn(`[Lakebase] /api/engines fallback: ${err}`);
           res.json({ data: MOCK_ENGINES, source: "mock" });
@@ -1203,6 +1410,9 @@ await createApp({
       // ── APUs (auxiliary power units, fleet aircraft) ───────────────────────────────────────
       app.get("/api/apus", async (req: Request, res: Response) => {
         const limit = clampLimit(req.query.limit, 200, 2000);
+        const cacheKey = `apus:${limit}`;
+        const cached = getCachedResponse(cacheKey);
+        if (cached) { res.json(cached); return; }
         try {
           const result = await executeQuery(
             req,
@@ -1242,7 +1452,9 @@ await createApp({
             LIMIT $1`,
             [limit],
           );
-          res.json({ data: result.rows.map(mapAPU), source: "live" });
+          const apuResponse = { data: result.rows.map(mapAPU), source: "live" };
+          setCachedResponse(cacheKey, apuResponse);
+          res.json(apuResponse);
         } catch (err) {
           console.warn(`[Lakebase] /api/apus fallback: ${err}`);
           res.json({ data: MOCK_APUS, source: "mock" });
@@ -1252,6 +1464,44 @@ await createApp({
       // ── Engine/APU Build-Up (hierarchical part tree) ───────────────────────────────────────
       app.get("/api/engine-buildup/:sn", async (req: Request, res: Response) => {
         const parentSn = req.params.sn;
+        // Live per-part TSN/TSC. qx_ppmtx_synced_gold_part_live_times (PLT) now
+        // carries the AUTHORITATIVE live value: the frozen inventory_control TSN
+        // baseline PLUS airframe hours/cycles accrued since the part's most-recent
+        // install (see merge_part_live_times in the gold pipeline). So PLT is
+        // preferred and the frozen inventory_control counter (TSCN) is only a
+        // fallback for serials with no PLT row.
+        // IMPORTANT: scope the TSCN fallback to control = 'TSN' rows only. Each
+        // control-typed row carries BOTH actual_hours and actual_cycles, so a
+        // blind MAX across all controls would pull an overhaulable part's TSO/CSO
+        // (control = 'TSO') values and mislabel them as TSN/CSN. A TSN row's
+        // actual_hours is TSN and its actual_cycles is CSN.
+        const TSCN = `(SELECT sn, MAX(actual_hours) AS tsn, MAX(actual_cycles) AS csn
+                       FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control
+                       WHERE control = 'TSN'
+                       GROUP BY sn)`;
+        const PLT = `${S}.qx_ppmtx_synced_gold_part_live_times`;
+        // Enriches a snapshot row with TSN/CSN and, for catalogued LLPs, the
+        // authoritative life limit and remaining cycles (limit − CSN).
+        const enrich = (row: any) => {
+          const pn = String(row.pn ?? "");
+          const tsn = row.tsn == null ? null : Number(row.tsn);
+          const csn = row.csn == null ? null : Number(row.csn);
+          const cycleLimit = LLP_LIFE_LIMITS[pn] ?? null;
+          const cyclesRemaining =
+            cycleLimit != null && csn != null ? cycleLimit - csn : null;
+          return {
+            sn: String(row.sn ?? ""),
+            pn,
+            description: String(row.description ?? "").replace(/\r\n/g, "").trim(),
+            condition: row.condition,
+            position: row.position,
+            tsn,
+            csn,
+            isLLP: cycleLimit != null,
+            cycleLimit,
+            cyclesRemaining,
+          };
+        };
         try {
           // Level 1: direct children of the engine/APU
           const level1 = await executeQuery(
@@ -1259,9 +1509,13 @@ await createApp({
             appkit,
             `SELECT s.sn, p.pn, p.pn_description AS description,
                     s.condition, s.installed_position AS position,
-                    s.nha_sn, s.nha_pn
+                    s.nha_sn, s.nha_pn,
+                    COALESCE(plt.live_tsn, ict.tsn) AS tsn,
+                    COALESCE(plt.live_tsc, ict.csn) AS csn
              FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
              JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
+             LEFT JOIN ${TSCN} ict ON ict.sn = s.sn
+             LEFT JOIN ${PLT} plt ON plt.sn = s.sn
              WHERE s.nha_sn = $1
              ORDER BY p.pn`,
             [parentSn],
@@ -1277,9 +1531,13 @@ await createApp({
               appkit,
               `SELECT s.sn, p.pn, p.pn_description AS description,
                       s.condition, s.installed_position AS position,
-                      s.nha_sn, s.nha_pn
+                      s.nha_sn, s.nha_pn,
+                      COALESCE(plt.live_tsn, ict.tsn) AS tsn,
+                      COALESCE(plt.live_tsc, ict.csn) AS csn
                FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_snapshot s
                JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON s.dim_part_key = p.dim_part_key
+               LEFT JOIN ${TSCN} ict ON ict.sn = s.sn
+               LEFT JOIN ${PLT} plt ON plt.sn = s.sn
                WHERE s.nha_sn = ANY($1::text[])
                ORDER BY s.nha_sn, p.pn`,
               [level1Sns],
@@ -1287,33 +1545,43 @@ await createApp({
             level2Rows = level2Result.rows;
           }
 
-          // Build the tree: attach children to their parent
+          // Group enriched level-2 rows under their parent SN.
           const childrenByParent: Record<string, any[]> = {};
           for (const row of level2Rows) {
-            const key = row.nha_sn;
-            if (!childrenByParent[key]) childrenByParent[key] = [];
-            childrenByParent[key].push({
-              sn: row.sn,
-              pn: row.pn,
-              description: String(row.description ?? "").replace(/\r\n/g, "").trim(),
-              condition: row.condition,
-              position: row.position,
-            });
+            const key = String(row.nha_sn ?? "");
+            (childrenByParent[key] ||= []).push(enrich(row));
           }
 
-          const tree = level1.rows.map((row: any) => ({
-            sn: row.sn,
-            pn: row.pn,
-            description: String(row.description ?? "").replace(/\r\n/g, "").trim(),
-            condition: row.condition,
-            position: row.position,
-            children: childrenByParent[row.sn] || [],
-          }));
+          // Walk the tree and hoist every LLP (at any level) into a flat list so
+          // it surfaces at the top. LLPs are carried with the assembly they came
+          // out of for context; non-LLPs retain the hierarchy below.
+          const llps: any[] = [];
+          const tree: any[] = [];
+          for (const node of level1.rows.map(enrich)) {
+            const kids = childrenByParent[node.sn] || [];
+            const keptChildren: any[] = [];
+            for (const c of kids) {
+              if (c.isLLP) {
+                llps.push({ ...c, parentSn: node.sn, parentPn: node.pn, parentDescription: node.description });
+              } else {
+                keptChildren.push(c);
+              }
+            }
+            if (node.isLLP) {
+              llps.push({ ...node, children: keptChildren, parentSn, parentPn: "", parentDescription: "" });
+            } else {
+              tree.push({ ...node, children: keptChildren });
+            }
+          }
+          // Lowest time-remaining first; unknown remaining sinks to the bottom.
+          llps.sort(
+            (a, b) => (a.cyclesRemaining ?? Infinity) - (b.cyclesRemaining ?? Infinity),
+          );
 
-          res.json({ data: tree, parentSn, source: "live" });
+          res.json({ data: tree, llps, parentSn, source: "live" });
         } catch (err) {
           console.warn(`[Lakebase] /api/engine-buildup/${parentSn} error: ${err}`);
-          res.json({ data: [], parentSn, source: "mock" });
+          res.json({ data: [], llps: [], parentSn, source: "mock" });
         }
       });
 
@@ -1711,7 +1979,7 @@ await createApp({
             `SELECT COUNT(*) FILTER (
                       WHERE fd.cancellation IS NOT NULL AND TRIM(fd.cancellation) <> '' AND ${inRange}
                     )::int AS cancel_count,
-                    COALESCE(SUM(fd.delay_minutes) FILTER (WHERE ${inRange}), 0)::int AS total_delay_minutes
+                    COALESCE(SUM(fd.delay_minutes) FILTER (WHERE fd.delay_minutes > 0 AND ${inRange}), 0)::int AS total_delay_minutes
              FROM ${S}.qx_ppmtx_synced_gold_fact_defect_delay fd
              JOIN ${S}.qx_ppmtx_synced_gold_fact_defect f
                ON fd.defect_type = f.defect_type AND fd.defect = f.defect AND fd.defect_item = f.defect_item
@@ -1915,6 +2183,74 @@ await createApp({
             steps: [],
             source: "mock",
           });
+        }
+      });
+
+      // ── Removal Plan saved config (chat constraints + assumptions) ───
+      // Persists the user-authored Engine Removal Plan overrides so a saved plan
+      // survives reloads and is shared across the ME team. Single "default" slot
+      // (one shared working plan); writes go through the app service principal
+      // (CAN_CONNECT_AND_CREATE), which also lazily creates the table.
+      const REMOVAL_PLAN_TABLE = `${S}.qx_ppmtx_removal_plan_saved`;
+      let removalPlanTableReady = false;
+      async function ensureRemovalPlanTable() {
+        if (removalPlanTableReady) return;
+        await appkit.lakebase.query(
+          `CREATE TABLE IF NOT EXISTS ${REMOVAL_PLAN_TABLE} (
+             slot text PRIMARY KEY,
+             config jsonb NOT NULL,
+             saved_by text,
+             saved_at timestamptz NOT NULL DEFAULT now()
+           )`,
+        );
+        removalPlanTableReady = true;
+      }
+
+      app.get("/api/removal-plan/constraints", async (_req: Request, res: Response) => {
+        try {
+          await ensureRemovalPlanTable();
+          const result = await appkit.lakebase.query(
+            `SELECT config, saved_by, saved_at FROM ${REMOVAL_PLAN_TABLE} WHERE slot = $1`,
+            ["default"],
+          );
+          const row = result.rows[0];
+          res.json({
+            data: row
+              ? {
+                  config: typeof row.config === "string" ? JSON.parse(row.config) : row.config,
+                  savedBy: row.saved_by ?? null,
+                  savedAt: row.saved_at ?? null,
+                }
+              : null,
+            source: "live",
+          });
+        } catch (err) {
+          console.warn(`[Lakebase] GET /api/removal-plan/constraints fallback: ${err}`);
+          res.json({ data: null, source: "mock" });
+        }
+      });
+
+      app.post("/api/removal-plan/constraints", async (req: Request, res: Response) => {
+        const config = req.body?.config;
+        if (config == null || typeof config !== "object") {
+          res.status(400).json({ ok: false, error: "Missing or invalid 'config' body." });
+          return;
+        }
+        const savedBy =
+          req.header("x-forwarded-email") || req.header("x-forwarded-user") || null;
+        try {
+          await ensureRemovalPlanTable();
+          await appkit.lakebase.query(
+            `INSERT INTO ${REMOVAL_PLAN_TABLE} (slot, config, saved_by, saved_at)
+             VALUES ($1, $2::jsonb, $3, now())
+             ON CONFLICT (slot) DO UPDATE
+               SET config = EXCLUDED.config, saved_by = EXCLUDED.saved_by, saved_at = now()`,
+            ["default", JSON.stringify(config), savedBy],
+          );
+          res.json({ ok: true, source: "live", savedAt: new Date().toISOString() });
+        } catch (err) {
+          console.warn(`[Lakebase] POST /api/removal-plan/constraints failed: ${err}`);
+          res.status(500).json({ ok: false, error: "Could not save the plan to Lakebase." });
         }
       });
 
