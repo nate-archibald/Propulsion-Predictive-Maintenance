@@ -76,11 +76,18 @@ export interface PlanParams {
   fhPerDay: number;
   fcPerDay: number;
   tatDays: number; // shop turnaround (removal → back as serviceable spare)
-  spacingWeeks: number; // preferred weeks between removals (hard min 1)
+  spacingWeeks: number; // TARGET weeks between removals (goal, not a hard floor)
   horizonMonths: number; // planning window
   startSpares: number; // serviceable spare engines today
   startSpareEsns?: string[]; // their ESNs (for the "ESN going on" column)
   constraints?: PlanConstraints; // chat-authored overrides (optional)
+  // When true, every engine's scheduling ceiling is tightened to its due date
+  // minus the at-removal buffer (below), and the cadence is allowed to compress
+  // down to the fixed 1-week floor to beat that threshold. Engines that still
+  // cannot fit (even at 1/week) are reported in `forceInfeasible`.
+  forceBeforeLimit?: boolean;
+  minHrsAtRemoval?: number; // HSR buffer to keep at removal (force mode)
+  minCycAtRemoval?: number; // LLP buffer to keep at removal (force mode)
   today?: Date;
 }
 
@@ -130,9 +137,20 @@ export interface PlanResult {
   // lands after an engine's due date, or a blackout that had to compress the
   // cadence). The plan is still returned (apply-with-warning behavior).
   constraintWarnings: string[];
+  // Force-before-limit mode: engines that could NOT be scheduled before their
+  // due-date-minus-buffer threshold even after compressing the cadence to the
+  // 1-week floor (a genuine physical conflict). Empty when the mode is off or
+  // everything fits.
+  forceInfeasible: string[];
 }
 
 const DAY_MS = 86_400_000;
+
+// The hard cadence floor: the plan prefers the user's TARGET spacing, but when a
+// congested cluster can't fit at that cadence it may compress down to this —
+// one removal per week — but never tighter. Fixed (non-variable) per product
+// decision: it models the real shop/logistics intake limit.
+const MIN_SPACING_DAYS = 7;
 
 // Required minimum serviceable-spare balance. The plan is only viable if the
 // running "Spares @ QX" balance stays at or above this floor across the whole
@@ -371,23 +389,38 @@ export function buildRemovalPlan(
   }
 
   // Scheduling ceiling per engine = the latest day it may be pulled. Normally
-  // this is its own due date, but an optional "remaining-hours floor" (chat lever
-  // "keep ≥ N hours on the limit") tightens it earlier so no engine is flown
-  // past the point where it still has N HSR hours left. True due date is kept
-  // separately for display / wasted-life math.
+  // this is its own due date. Two things can tighten it earlier:
+  //  • the chat lever "keep ≥ N hours on the limit" (minHrsFloor), and
+  //  • force-before-limit mode, which subtracts the at-removal buffer in the
+  //    engine's BINDING unit (hours for HSR, cycles for LLP) so the engine is
+  //    scheduled with at least that much life left.
+  // The true due date is kept separately for display / wasted-life math.
+  const forceBeforeLimit = params.forceBeforeLimit ?? false;
+  const minHrs = Math.max(params.minHrsAtRemoval ?? 0, 0);
+  const minCyc = Math.max(params.minCycAtRemoval ?? 0, 0);
   const hrsFloor =
     constraints.minHrsFloor != null && constraints.minHrsFloor > 0
       ? constraints.minHrsFloor
       : null;
+  // Days of life represented by the force buffer for each engine (binding unit).
+  const bufferDaysOf = (c: Candidate): number => {
+    if (!forceBeforeLimit) return 0;
+    if (c.bindingConstraint === "HSR") return fh ? minHrs / fh : 0;
+    return fc ? minCyc / fc : 0;
+  };
   const ceilingDays = candidates.map((c) => {
-    if (hrsFloor == null || !fh) return c.dueDays;
-    const hsrRem = Math.max(c.e.hsrTarget - c.e.tshsi, 0);
-    const floorDays = (hsrRem - hrsFloor) / fh;
-    return Math.min(c.dueDays, Math.max(floorDays, 0));
+    let ceil = c.dueDays;
+    const buf = bufferDaysOf(c);
+    if (buf > 0) ceil = Math.min(ceil, Math.max(c.dueDays - buf, 0));
+    if (hrsFloor != null && fh) {
+      const hsrRem = Math.max(c.e.hsrTarget - c.e.tshsi, 0);
+      ceil = Math.min(ceil, Math.max((hsrRem - hrsFloor) / fh, 0));
+    }
+    return ceil;
   });
 
-  // 2) Assign removal days, latest-first, pulling earlier engines in to honor
-  //    the spacing cadence; never later than an engine's scheduling ceiling.
+  // 2) Assign removal days, latest-first (ALAP), keeping the TARGET cadence
+  //    where there's room; never later than an engine's scheduling ceiling.
   const removalDays = new Array<number>(candidates.length);
   for (let i = candidates.length - 1; i >= 0; i--) {
     const due = ceilingDays[i];
@@ -397,21 +430,23 @@ export function buildRemovalPlan(
         : Math.min(due, removalDays[i + 1] - spacingDays);
   }
 
-  // 2b) Forward re-spacing pass. The backward pass anchors from the LAST
-  //     engine's due date; when more engines are due than can fit in the horizon
-  //     at the given spacing (e.g. extending to 48 months), the earliest engines
+  // 2b) Forward re-spacing pass (the Option-B compression step). The backward
+  //     pass anchors from the LAST engine's due date at the TARGET cadence; when
+  //     more engines are due than can fit before their ceilings at that cadence
+  //     (e.g. a congested cluster, or extending to 48 months), the earliest ones
   //     get pushed to negative days. Without this pass they would all snap onto
-  //     the first Monday below, stacking a cluster of same-day removals that
-  //     drains the spare pool instantly (the "immediate usage of N engines"
-  //     artifact). Instead, clamp to the future and spread any overflow forward
-  //     by the spacing cadence. Engines already satisfying the cadence are
-  //     untouched, so the near-term plan stays stable as the horizon grows.
+  //     the first Monday below, stacking same-day removals that drain the spare
+  //     pool instantly. Instead, clamp to the future and pack any overflow
+  //     forward at the fixed 1-WEEK floor (MIN_SPACING_DAYS) — so the cadence
+  //     compresses ONLY inside the congested window and relaxes straight back to
+  //     the target spacing once it catches up. Engines already satisfying the
+  //     target cadence are untouched, so the near-term plan stays stable.
   const firstMonday = mondayOnOrBefore(addDays(today, 6)); // this/next Monday
   const firstMondayDay = (firstMonday.getTime() - today.getTime()) / DAY_MS;
   let floorDay = firstMondayDay;
   for (let i = 0; i < candidates.length; i++) {
     if (removalDays[i] < floorDay) removalDays[i] = floorDay;
-    floorDay = removalDays[i] + spacingDays;
+    floorDay = removalDays[i] + MIN_SPACING_DAYS;
   }
 
   // 3) Snap each removal to the Monday on/before, clamped to no earlier than the
@@ -539,6 +574,24 @@ export function buildRemovalPlan(
     }
   }
 
+  // Force-before-limit: list every engine whose scheduled removal still leaves
+  // LESS than the required at-removal buffer in its binding unit — i.e. the
+  // cadence could not be compressed enough (even at the 1-week floor) to beat
+  // its due-date-minus-buffer threshold. These are genuine physical conflicts
+  // the planner must resolve (add a spare, raise intake, accept an overrun).
+  const forceInfeasible: string[] = [];
+  if (forceBeforeLimit) {
+    for (const r of rows) {
+      const buf = r.limitingUnit === "hr" ? minHrs : minCyc;
+      if (buf > 0 && r.limitingRemainingAtRemoval < buf) {
+        const short = Math.round(buf - r.limitingRemainingAtRemoval);
+        forceInfeasible.push(
+          `${r.engineSN} (removal ${r.removalDate}) leaves ${Math.round(r.limitingRemainingAtRemoval).toLocaleString()} ${r.limitingUnit} — ${short.toLocaleString()} ${r.limitingUnit} short of the ${buf.toLocaleString()} ${r.limitingUnit} buffer; can't fit before its limit even at one removal/week.`,
+        );
+      }
+    }
+  }
+
   // 5) Spare-balance series over the horizon for the chart (removal −1, return +1).
   const events: { day: number; delta: number }[] = [];
   for (let i = 0; i < candidates.length; i++) {
@@ -610,5 +663,5 @@ export function buildRemovalPlan(
     }
   }
 
-  return { rows, weeks, balanceSeries, minSpares, feasible, firstIssueDate, issues, constraintWarnings };
+  return { rows, weeks, balanceSeries, minSpares, feasible, firstIssueDate, issues, constraintWarnings, forceInfeasible };
 }

@@ -58,6 +58,7 @@ interface PlanConfig {
   printHorizonMonths: number;
   minHrsAtRemoval: number;
   minCycAtRemoval: number;
+  forceBeforeLimit: boolean;
   spareOverride: number | null;
   constraints: PlanConstraints;
 }
@@ -71,6 +72,7 @@ const DEFAULT_CONFIG: PlanConfig = {
   printHorizonMonths: DEFAULT_PRINT_HORIZON_MONTHS,
   minHrsAtRemoval: DEFAULT_MIN_HRS_AT_REMOVAL,
   minCycAtRemoval: DEFAULT_MIN_CYC_AT_REMOVAL,
+  forceBeforeLimit: true,
   spareOverride: null,
   constraints: {},
 };
@@ -395,6 +397,9 @@ export default function RemovalPlanPage() {
         tatDays: config.tatDays,
         spacingWeeks: config.spacingWeeks,
         horizonMonths: config.horizonMonths,
+        forceBeforeLimit: config.forceBeforeLimit,
+        minHrsAtRemoval: config.minHrsAtRemoval,
+        minCycAtRemoval: config.minCycAtRemoval,
         startSpares,
         startSpareEsns: liveSpares
           ? [
@@ -487,6 +492,33 @@ export default function RemovalPlanPage() {
         </div>
       )}
 
+      {/* Force-before-limit infeasibility banner */}
+      {!loading && plan.forceInfeasible.length > 0 && (
+        <div className="rounded-md border border-[var(--warning)]/50 bg-[var(--warning)]/10 px-3 py-2 text-sm text-[var(--warning)] flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <div>
+            <span className="font-medium">
+              Force removals before limit: {plan.forceInfeasible.length}{" "}
+              engine{plan.forceInfeasible.length === 1 ? "" : "s"} can’t be
+              scheduled before the removal buffer, even compressing to one
+              removal per week.
+            </span>
+            <ul className="mt-1 list-disc pl-5 text-xs">
+              {plan.forceInfeasible.slice(0, 6).map((m, i) => (
+                <li key={i}>{m}</li>
+              ))}
+            </ul>
+            {plan.forceInfeasible.length > 6 && (
+              <span className="text-xs">
+                …and {plan.forceInfeasible.length - 6} more. Add a spare, raise
+                shop intake, or accept the overrun (uncheck “Force removals
+                before limit”).
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Assumptions */}
       <Card className="print:hidden">
         <CardContent className="flex flex-wrap items-center gap-x-5 gap-y-2 py-3">
@@ -497,7 +529,7 @@ export default function RemovalPlanPage() {
           <NumField label="FC/day" value={config.fcPerDay} onChange={(n) => setField({ fcPerDay: n })} step="0.1" />
           <NumField label="Shop TAT" value={config.tatDays} onChange={(n) => setField({ tatDays: n })} suffix="days" />
           <NumField
-            label="Spacing"
+            label="Target Spacing"
             value={config.spacingWeeks}
             onChange={(n) => setField({ spacingWeeks: Math.max(Math.round(n), 1) })}
             suffix="wks"
@@ -526,6 +558,15 @@ export default function RemovalPlanPage() {
             onChange={(n) => setField({ minCycAtRemoval: Math.max(n, 0) })}
             suffix="cyc"
           />
+          <label className="flex items-center gap-1.5 text-xs font-medium cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 accent-primary"
+              checked={config.forceBeforeLimit}
+              onChange={(e) => setField({ forceBeforeLimit: e.target.checked })}
+            />
+            Force removals before limit
+          </label>
           <NumField
             label="Spares @ start"
             value={startSpares}
