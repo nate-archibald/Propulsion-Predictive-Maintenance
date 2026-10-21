@@ -740,10 +740,23 @@ export default function RemovalPlanPage() {
                         <td className="py-2 pr-3 text-right tabular-nums">
                           {r ? (
                             <>
-                              {fmt(r.limitingRemainingAtRemoval)} {r.limitingUnit}
+                              <span
+                                className={
+                                  r.limitingRemainingAtRemoval < 0
+                                    ? "font-semibold text-red-600"
+                                    : ""
+                                }
+                              >
+                                {fmt(r.limitingRemainingAtRemoval)} {r.limitingUnit}
+                              </span>
                               {r.weeksEarly >= 1 && (
                                 <span className="ml-1 text-xs text-muted-foreground">
                                   ({Math.round(r.weeksEarly)}w early)
+                                </span>
+                              )}
+                              {r.weeksEarly <= -1 && (
+                                <span className="ml-1 text-xs font-medium text-red-600">
+                                  ({Math.round(-r.weeksEarly)}w late)
                                 </span>
                               )}
                             </>

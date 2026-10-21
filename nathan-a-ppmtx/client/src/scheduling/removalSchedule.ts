@@ -90,12 +90,12 @@ export interface PlanRow {
   position?: string; // "L" or "R" for engine position
   bindingConstraint: "HSR" | "LLP";
   dueDate: string; // when the limiting factor hits 0
-  removalDate: string; // scheduled Monday (≤ due date)
-  weeksEarly: number; // how early vs. the due date
+  removalDate: string; // scheduled Monday (≤ due date, or later if over capacity)
+  weeksEarly: number; // signed: + = pulled early, − = flown past the due date
   esnGoingOn: string; // assigned spare (FIFO), "" if none available
   returnDate: string; // removal + TAT (removed engine back as a spare)
   sparesAtQx: number; // running serviceable-spare balance after this removal
-  // Limiting-factor life left at the (possibly early) removal.
+  // Limiting-factor life left at the removal. Negative when flown past the limit.
   limitingUnit: "hr" | "cyc";
   limitingRemainingNow: number;
   limitingRemainingAtRemoval: number;
@@ -455,7 +455,9 @@ export function buildRemovalPlan(
     const removalDate = removalDates[i];
     const removalDay = (removalDate.getTime() - today.getTime()) / DAY_MS;
     const dueDate = addDays(today, c.dueDays);
-    const weeksEarly = Math.max((c.dueDays - removalDay) / 7, 0);
+    // Signed: positive = pulled early (life left on the limit), negative = flown
+    // PAST the due date (overflow engines that could not be fit before due).
+    const weeksEarly = (c.dueDays - removalDay) / 7;
 
     // Pick the longest-available spare that has arrived by the removal date.
     const ready = sparePool
@@ -483,13 +485,15 @@ export function buildRemovalPlan(
     const sparesAtQx =
       sparePool.filter((s) => s.availDay <= removalDay).length - (feasible ? 0 : 1);
 
-    const hrsRemainingAtRemoval = Math.max(
-      c.e.hsrTarget - c.e.tshsi - (fh ?? 0) * removalDay,
-      0,
-    );
+    // Limiting-factor life left AT the (possibly late) removal. NOT clamped at
+    // zero: when an engine is scheduled past its due date it is flown beyond the
+    // limit, so this goes negative — surfaced in the UI so the overrun is visible
+    // rather than hidden as "0 hr".
+    const hrsRemainingAtRemoval =
+      c.e.hsrTarget - c.e.tshsi - (fh ?? 0) * removalDay;
     const cycRemainingAtRemoval =
       c.e.minCyclesRemaining != null
-        ? Math.max(c.e.minCyclesRemaining - (fc ?? 0) * removalDay, 0)
+        ? c.e.minCyclesRemaining - (fc ?? 0) * removalDay
         : null;
 
     const limitingUnit: "hr" | "cyc" = c.bindingConstraint === "HSR" ? "hr" : "cyc";
