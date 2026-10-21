@@ -149,6 +149,35 @@ describe("buildRemovalPlan — spare-aware smoothing", () => {
   });
 });
 
+describe("buildRemovalPlan — a pin does not cascade other engines earlier", () => {
+  it("keeps later engines on their spare-aware backbone (no pre-pin cascade)", () => {
+    // Reproduces the chat-constraint regression: pinning removal #1 used to make
+    // applyPlanConstraints re-derive the whole schedule from a naive
+    // target-spacing chain (no capacity awareness), cascading other engines months
+    // before the pin and sinking the spare balance negative. With the fix the
+    // pinned engine sits exactly where asked and every other engine keeps its
+    // feasible backbone — nothing is scheduled before the pin.
+    const fleet: HsrEngine[] = [];
+    for (let i = 0; i < 12; i++) {
+      fleet.push(engine(`ESN-${500 + i}`, `N${500 + i}`, 5000 + i * 150));
+    }
+    const constraints: PlanConstraints = {
+      pins: [{ ordinal: 1, monday: "2027-01-04" }],
+    };
+    const plan = buildRemovalPlan(fleet, {
+      ...BASE,
+      horizonMonths: 48,
+      startSpares: 10,
+      constraints,
+    });
+    expect(plan.rows[0].removalDate).toBe("2027-01-04");
+    expect(plan.rows.every((r) => r.removalDate >= "2027-01-04")).toBe(true);
+    expect(plan.feasible).toBe(true);
+    const minSpares = Math.min(...plan.balanceSeries.map((b) => b.spares));
+    expect(minSpares).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe("buildRemovalPlan — a far-future cluster does not yank engines early", () => {
   it("schedules every engine near its own due date, not dozens of weeks early", () => {
     // 80 engines all due far out (~1,120–1,910 days), 10 days apart. The old

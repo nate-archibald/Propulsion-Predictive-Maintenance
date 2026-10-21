@@ -230,14 +230,14 @@ function applyPlanConstraints(
   removalDates: Date[],
   dueMonday: Date[],
   firstMonday: Date,
-  spacingDays: number,
   constraints: PlanConstraints,
 ): string[] {
   const warnings: string[] = [];
   const n = candidates.length;
   if (n === 0) return warnings;
 
-  const spacing = Math.max(spacingDays, 7); // Monday-space gap (hard min 1 week)
+  const spacing = MIN_SPACING_DAYS; // ordering gap only — hard 1-week floor (the
+  // capacity-aware spread already lives in the backbone `removalDates`)
 
   // Resolve pins to sequence indices → target Monday.
   const pinMonday = new Map<number, Date>();
@@ -261,10 +261,13 @@ function applyPlanConstraints(
     pinMonday.set(idx, m);
   }
 
-  // Single latest-first placement pass. Each removal is placed no later than its
-  // due week and at least `spacing` before the next (later-sequence) removal —
-  // reproducing the backbone's pull-early cadence — while stepping earlier to
-  // dodge blackout weeks and keep each calendar month within the per-month cap.
+  // Single latest-first placement pass. Each removal STARTS from its
+  // capacity-aware backbone Monday (already in `removalDates`) and is only moved
+  // EARLIER when ordering (a 1-week gap before the next removal), its due-week
+  // ceiling, a blackout week, or a full calendar month requires it. It is never
+  // re-derived from a naive target-spacing chain — that is what reintroduced the
+  // long-horizon cascade (removals pulled into 2026) and drove the spare balance
+  // negative whenever a chat constraint was present.
   const cap =
     constraints.maxPerMonth != null && constraints.maxPerMonth >= 0
       ? Math.floor(constraints.maxPerMonth)
@@ -291,10 +294,13 @@ function applyPlanConstraints(
           `Removal #${i + 1} (${candidates[i].e.engineSN}) is pinned inside the blackout ${b.label ?? `${b.start}…${b.end}`}. Kept as requested.`,
         );
     } else {
-      const ceilingMs = Number.isFinite(nextStart)
+      // Keep the capacity-aware backbone position unless ordering or the due
+      // ceiling force it earlier.
+      const latestMs = Number.isFinite(nextStart)
         ? Math.min(dueMonday[i].getTime(), nextStart - spacing * DAY_MS)
         : dueMonday[i].getTime();
-      m = new Date(ceilingMs);
+      m = removalDates[i]; // capacity-aware backbone
+      if (m.getTime() > latestMs) m = new Date(latestMs);
       // Snap to a Monday on/before (ceiling may be off-grid after the -spacing).
       m = mondayOnOrBefore(m);
       // Step earlier out of blackout weeks and full months.
@@ -522,7 +528,6 @@ export function buildRemovalPlan(
         removalDates,
         dueMonday,
         firstMonday,
-        spacingDays,
         constraints,
       )
     : [];
