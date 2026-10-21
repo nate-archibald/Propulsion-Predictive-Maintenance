@@ -314,6 +314,8 @@ interface Candidate {
   dueDays: number;
   hsrDaysToDue: number;
   llpDaysToDue: number;
+  efh: number | null; // effective FH/day used (per-engine observed, else fleet)
+  efc: number | null; // effective FC/day used (per-engine observed, else fleet)
 }
 
 export function buildRemovalPlan(
@@ -327,16 +329,21 @@ export function buildRemovalPlan(
   const spacingDays = Math.max(Math.round(params.spacingWeeks), 1) * 7;
   const horizonDays = Math.max(params.horizonMonths, 1) * 30.4375;
 
-  // 1) Due date per installed engine (whichever limit lands first). Both limits
-  //    are converted to days using the fleet FH/FC levers at the top of the page
-  //    — tuning those assumptions re-plans every engine uniformly.
+  // 1) Due date per installed engine (whichever limit lands first). Each limit
+  //    is converted to days using the engine's OWN observed utilization
+  //    (hrs/cyc per day) so a high-cycle engine correctly binds on its LLP
+  //    rather than being forced onto HSR by a flat fleet-average cycle rate.
+  //    The fleet FH/FC levers are the fallback when an engine has no observed
+  //    rate (and still re-plan those fallback engines when tuned).
   const candidates: Candidate[] = [];
   for (const e of engines) {
     if (!e.currentlyInstalled) continue;
-    const hsrDays = fh ? Math.max(e.hsrTarget - e.tshsi, 0) / fh : Infinity;
+    const efh = e.hrsPerDay && e.hrsPerDay > 0 ? e.hrsPerDay : fh;
+    const efc = e.cyclesPerDay && e.cyclesPerDay > 0 ? e.cyclesPerDay : fc;
+    const hsrDays = efh ? Math.max(e.hsrTarget - e.tshsi, 0) / efh : Infinity;
     const llpDays =
-      fc && e.minCyclesRemaining != null
-        ? Math.max(e.minCyclesRemaining, 0) / fc
+      efc && e.minCyclesRemaining != null
+        ? Math.max(e.minCyclesRemaining, 0) / efc
         : Infinity;
     const dueDays = Math.min(hsrDays, llpDays);
     if (!Number.isFinite(dueDays)) continue; // no rate / no limit data
@@ -347,6 +354,8 @@ export function buildRemovalPlan(
       dueDays,
       hsrDaysToDue: hsrDays,
       llpDaysToDue: llpDays,
+      efh,
+      efc,
     });
   }
 
@@ -380,9 +389,9 @@ export function buildRemovalPlan(
       ? constraints.minHrsFloor
       : null;
   const ceilingDays = candidates.map((c) => {
-    if (hrsFloor == null || !fh) return c.dueDays;
+    if (hrsFloor == null || !c.efh) return c.dueDays;
     const hsrRem = Math.max(c.e.hsrTarget - c.e.tshsi, 0);
-    const floorDays = (hsrRem - hrsFloor) / fh;
+    const floorDays = (hsrRem - hrsFloor) / c.efh;
     return Math.min(c.dueDays, Math.max(floorDays, 0));
   });
 
@@ -490,10 +499,10 @@ export function buildRemovalPlan(
     // limit, so this goes negative — surfaced in the UI so the overrun is visible
     // rather than hidden as "0 hr".
     const hrsRemainingAtRemoval =
-      c.e.hsrTarget - c.e.tshsi - (fh ?? 0) * removalDay;
+      c.e.hsrTarget - c.e.tshsi - (c.efh ?? 0) * removalDay;
     const cycRemainingAtRemoval =
       c.e.minCyclesRemaining != null
-        ? c.e.minCyclesRemaining - (fc ?? 0) * removalDay
+        ? c.e.minCyclesRemaining - (c.efc ?? 0) * removalDay
         : null;
 
     const limitingUnit: "hr" | "cyc" = c.bindingConstraint === "HSR" ? "hr" : "cyc";
