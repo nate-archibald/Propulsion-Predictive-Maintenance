@@ -246,7 +246,7 @@ export default function RemovalPlanPage() {
   const handleChat = (raw: string) => {
     const installed = data
       .filter((e) => e.currentlyInstalled)
-      .map((e) => ({ engineSN: e.engineSN, tail: e.installedAC }));
+      .map((e) => ({ engineSN: e.engineSN, tail: e.installedAC, position: e.position }));
     const res = parsePlanCommand(raw, config.constraints, {
       today: new Date(),
       engines: installed,
@@ -361,11 +361,21 @@ export default function RemovalPlanPage() {
     }
   };
 
-  // Format location display: "Tail (Position)"
+  // Normalize a raw engine position to the "#1" (left) / "#2" (right) label.
+  // Source data can arrive as "ENG-1"/"ENG-2" (normalized by the server), the
+  // raw "LH ENG"/"RH ENG", or a bare "L"/"R" — all map to the same two sides.
+  const formatPosition = (position: string | undefined): string => {
+    const p = (position ?? "").trim().toUpperCase();
+    if (["ENG-1", "LH ENG", "LH", "L", "1", "#1"].includes(p)) return "#1";
+    if (["ENG-2", "RH ENG", "RH", "R", "2", "#2"].includes(p)) return "#2";
+    return p; // unknown position — show whatever we have
+  };
+
+  // Format location display: "Tail (#1)" / "Tail (#2)"
   const formatLocation = (tail: string | undefined, position: string | undefined): string => {
     if (!tail) return "Unknown";
-    if (position) return `${tail} (${position === "L" ? "Left" : "Right"} Wing)`;
-    return tail;
+    const pos = formatPosition(position);
+    return pos ? `${tail} (${pos})` : tail;
   };
 
   const plan = useMemo(
@@ -508,7 +518,7 @@ export default function RemovalPlanPage() {
                   <p className="font-medium mb-1">Edit the removal plan in plain English:</p>
                   <ul className="list-disc pl-4 space-y-0.5 text-xs">
                     <li><span className="font-medium">Pin a removal</span> — e.g. "first removal the first week of January 2027" or "remove ESN 12345 on 2027-03-15" (supports any date, not just Mondays)</li>
-                    <li><span className="font-medium">Location-based</span> — e.g. "remove engine on left side of N5678" to reference by aircraft tail + position</li>
+                    <li><span className="font-medium">By engine position</span> — e.g. "remove #1 engine on N5678" or "remove the #2 on N1234" (#1 = left, #2 = right)</li>
                     <li><span className="font-medium">Block out dates</span> — e.g. "no removals in March" or "no removals the week of 2027-02-15"</li>
                     <li><span className="font-medium">Set cadence</span> — e.g. "use a 5-week cadence"</li>
                     <li><span className="font-medium">Cap per month</span> — e.g. "at most one removal per month"</li>

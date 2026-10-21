@@ -23,6 +23,7 @@ import type { PlanConstraints, Blackout, RemovalPin } from "./removalSchedule";
 export interface EngineRef {
   engineSN: string;
   tail: string;
+  position?: string; // raw installed position (e.g. "ENG-1"/"ENG-2") for side-aware matching
 }
 
 export interface ParseContext {
@@ -242,6 +243,26 @@ function err(intent: ParseIntent, summary: string): ParseResult {
   return { ok: false, intent, summary };
 }
 
+// Normalize any engine-position spelling to a side: "1" (left/#1) or "2"
+// (right/#2). Covers the server-normalized "ENG-1"/"ENG-2", the raw
+// "LH ENG"/"RH ENG", and bare "L"/"R".
+function normSide(position: string | undefined): "1" | "2" | null {
+  const p = (position ?? "").trim().toUpperCase();
+  if (["ENG-1", "LH ENG", "LH", "L", "1", "#1"].includes(p)) return "1";
+  if (["ENG-2", "RH ENG", "RH", "R", "2", "#2"].includes(p)) return "2";
+  return null;
+}
+
+// Detect which engine side a phrase refers to: "#1", "number 1", "position 1",
+// "engine 1", "left"/"LH" → "1"; the "2"/right/RH equivalents → "2".
+function detectSide(text: string): "1" | "2" | null {
+  if (/#\s*1|\b(left|lh)\b|\bnumber\s*(one|1)\b|\bno\.?\s*1\b|\bposition\s*1\b|\beng(?:ine)?\s*#?\s*1\b|\beng-?1\b/i.test(text))
+    return "1";
+  if (/#\s*2|\b(right|rh)\b|\bnumber\s*(two|2)\b|\bno\.?\s*2\b|\bposition\s*2\b|\beng(?:ine)?\s*#?\s*2\b|\beng-?2\b/i.test(text))
+    return "2";
+  return null;
+}
+
 export function parsePlanCommand(
   raw: string,
   prev: PlanConstraints,
@@ -411,31 +432,44 @@ export function parsePlanCommand(
   // "have the first removal be the first week of January 2027",
   // "pin removal 2 to 2027-03-15", "first removal on Jan 4 2027",
   // "remove ESN-12345 on 2027-03-15" (supports non-Monday dates),
-  // "remove the engine on the left side of N5678"
+  // "remove the engine on the left side of N5678", "remove #1 engine on N5678"
   if (/\b(pin|have|make|set|move|schedule|put|remove)\b/.test(text) || /\bremoval\b/.test(text)) {
     const ordinal = pickOrdinal(text);
     const engineRefs = findEngineRefs(input, ctx.engines);
-    
-    // Support location-based reference: "left/right side of TAIL" or "left/right wing TAIL"
+
+    // Support side-based reference ("#1"/"#2", "left/right", "engine 1/2",
+    // "position 1/2"), scoped to the aircraft tail named in the phrase so the
+    // correct installed engine is resolved when a tail has two engines.
     let resolvedEngineSN: string | undefined = engineRefs[0];
-    if (!resolvedEngineSN && /\b(left|right|l|r)\b/.test(text)) {
-      const locM = text.match(/\b(left|right|l|r)(?:\s+(?:side|wing))?\s+(?:of\s+)?([A-Z][0-9A-Z]+)\b/i);
-      if (locM) {
-        const tail = locM[2].toUpperCase();
-        const engine = ctx.engines.find((e) => e.tail?.toUpperCase() === tail);
-        if (engine) resolvedEngineSN = engine.engineSN;
+    if (!resolvedEngineSN) {
+      const side = detectSide(text);
+      if (side) {
+        const upper = input.toUpperCase();
+        const match = ctx.engines.find(
+          (e) =>
+            e.tail &&
+            upper.includes(e.tail.trim().toUpperCase()) &&
+            normSide(e.position) === side,
+        );
+        if (match) resolvedEngineSN = match.engineSN;
       }
     }
     
-    // Parse the target date — could be a specific date or a Monday phrase
+    // Parse the target date. An exact calendar date (ISO) is honored as-is ONLY
+    // for an engine/side-specific pin — that represents a real removal event,
+    // which can fall on any weekday (e.g. an unscheduled AOG removal). Ordinal
+    // pins ("removal #2") stay on the Monday grid, matching the weekly schedule.
     const specificDateM = text.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    const engineSpecific = ordinal == null && resolvedEngineSN != null;
     let targetDate: Date | null = null;
-    
-    if (specificDateM) {
-      // ISO date format: 2027-03-15 (keep as-is, don't snap to Monday)
+    let exactDate = false;
+
+    if (specificDateM && engineSpecific) {
+      // Keep the exact day (no Monday snap) for an engine-specific removal.
       targetDate = new Date(+specificDateM[1], +specificDateM[2] - 1, +specificDateM[3]);
+      exactDate = true;
     } else {
-      // Try to parse as a Monday phrase (existing behavior)
+      // Monday-snapped (existing behavior) for ordinals and date phrases.
       targetDate = parseDateToMonday(input, today);
     }
     
@@ -454,13 +488,13 @@ export function parsePlanCommand(
         pin,
       ];
       const who = ordinal != null ? `Removal #${ordinal}` : `Engine ${resolvedEngineSN}`;
-      // Indicate whether it's being pinned to a specific Monday or exact date
-      const isExactDate = specificDateM != null;
-      const whenStr = isExactDate ? `${targetIso} (exact date)` : `the week of ${targetIso}`;
+      const whenStr = exactDate ? `${targetIso} (exact date)` : `the week of ${targetIso}`;
       return { ok: true, intent: "pin", summary: `${who} pinned to ${whenStr}.`, nextConstraints: next };
     }
-    // Fall through to ORDER if engines named without a date.
-    if (!targetDate && (ordinal != null || resolvedEngineSN)) {
+    // Only error when a removal ordinal was explicitly named but no date parsed.
+    // Engine/side references without a date fall through to ORDER (e.g.
+    // "remove ESN-31047 first" or "put N635QX first").
+    if (!targetDate && ordinal != null) {
       return err("pin", "I understood the removal but not the date — try 'first removal in the first week of January 2027' or 'remove ESN-12345 on 2027-03-15'.");
     }
   }
