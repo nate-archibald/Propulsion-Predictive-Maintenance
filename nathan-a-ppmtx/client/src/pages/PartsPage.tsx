@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useSearchParams, useNavigate } from "react-router";
+import { useState, useMemo } from "react";
+import { useSearchParams } from "react-router";
 import {
   Card,
   CardContent,
@@ -8,10 +8,9 @@ import {
   Input,
   Skeleton,
 } from "@databricks/appkit-ui/react";
-import { Search, Package, ArrowRight, Clock, CalendarClock, AlertTriangle } from "lucide-react";
+import { Search, Package, Clock, CalendarClock, AlertTriangle, ArrowLeftRight, Star, ShieldAlert, Plane, ChevronLeft, ChevronRight, MousePointerClick } from "lucide-react";
 import type { Part } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
-import { ConditionBadge } from "../components/qx-ui";
 
 interface SoftTimeRow {
   displayName: string;
@@ -47,11 +46,17 @@ function applyFuelInjectorVisibility<T extends { displayName: string }>(
 function SoftTimesTable({
   showFuelInjector,
   onToggleFuelInjector,
+  inclInterchange,
+  onToggleInterchange,
 }: {
   showFuelInjector: boolean;
   onToggleFuelInjector: (value: boolean) => void;
+  inclInterchange: boolean;
+  onToggleInterchange: (value: boolean) => void;
 }) {
-  const { data, source } = useLakebaseData<SoftTimeRow>("/api/soft-times");
+  const { data, source } = useLakebaseData<SoftTimeRow>(
+    `/api/soft-times?interchange=${inclInterchange ? 1 : 0}`,
+  );
   const loading = source === "loading";
 
   const rows = applyFuelInjectorVisibility(data, showFuelInjector);
@@ -62,20 +67,40 @@ function SoftTimesTable({
     <Card>
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="h-4 w-4" />
-            Component Soft Time Recommendations
-          </CardTitle>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showFuelInjector}
-              onChange={(e) => onToggleFuelInjector(e.target.checked)}
-              className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
-              aria-label="Show Fuel Injector Data"
-            />
-            Show Fuel Injector Data
-          </label>
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Component Soft Time Recommendations
+            </CardTitle>
+            {inclInterchange && (
+              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                <ArrowLeftRight className="h-3 w-3" />
+                Includes interchangeable P/Ns
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={inclInterchange}
+                onChange={(e) => onToggleInterchange(e.target.checked)}
+                className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                aria-label="Include interchangeable part numbers"
+              />
+              Include interchangeable P/Ns
+            </label>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showFuelInjector}
+                onChange={(e) => onToggleFuelInjector(e.target.checked)}
+                className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                aria-label="Show Fuel Injector Data"
+              />
+              Show Fuel Injector Data
+            </label>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">
@@ -161,11 +186,11 @@ const WINDOW_OPTIONS = [
 
 // Overhaul budget planner: pick a utilization rate + forward window and see
 // which soft-time units will cross their limit — the LLP/overhaul budget view.
-function OverhaulForecast({ showFuelInjector }: { showFuelInjector: boolean }) {
+function OverhaulForecast({ showFuelInjector, inclInterchange }: { showFuelInjector: boolean; inclInterchange: boolean }) {
   const [hrsPerDay, setHrsPerDay] = useState(7.5);
   const [months, setMonths] = useState(12);
 
-  const endpoint = `/api/overhaul-forecast?hrsPerDay=${hrsPerDay}&months=${months}`;
+  const endpoint = `/api/overhaul-forecast?hrsPerDay=${hrsPerDay}&months=${months}&interchange=${inclInterchange ? 1 : 0}`;
   const { data: rawData, source } = useLakebaseData<ForecastGroup>(endpoint);
   const loading = source === "loading";
 
@@ -186,10 +211,18 @@ function OverhaulForecast({ showFuelInjector }: { showFuelInjector: boolean }) {
     <Card>
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <CalendarClock className="h-4 w-4" />
-            Overhaul Budget Forecast
-          </CardTitle>
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <CalendarClock className="h-4 w-4" />
+              Overhaul Budget Forecast
+            </CardTitle>
+            {inclInterchange && (
+              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                <ArrowLeftRight className="h-3 w-3" />
+                Includes interchangeable P/Ns
+              </p>
+            )}
+          </div>
           <div className="flex items-center gap-4 text-sm">
             <label className="flex items-center gap-1.5 text-muted-foreground">
               Rate
@@ -322,303 +355,409 @@ function OverhaulForecast({ showFuelInjector }: { showFuelInjector: boolean }) {
   );
 }
 
+interface InterchangeableRow {
+  pn: string;
+  interchangeClass: string;
+  type: string;
+  prefer: boolean;
+  manufacturer: string;
+}
+
+// Shows all part numbers interchangeable with the selected part. Two-way pairs
+// are fully equivalent; one-way pairs mean the selected P/N may be replaced BY
+// the listed alternate (directional). Preferred alternates are starred.
+function InterchangeablePanel({ pn }: { pn: string }) {
+  const { data, source } = useLakebaseData<InterchangeableRow>(
+    pn ? `/api/interchangeable/${encodeURIComponent(pn)}` : null,
+  );
+  if (source === "loading") return <Skeleton className="h-12 w-full" />;
+  if (!data.length) return null;
+  return (
+    <div className="border-t pt-3">
+      <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+        <ArrowLeftRight className="h-3.5 w-3.5" />
+        Interchangeable P/Ns ({data.length})
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {data.map((alt) => (
+          <span
+            key={`${alt.pn}-${alt.interchangeClass}`}
+            className="inline-flex items-center gap-1 rounded-md border bg-muted/60 px-2 py-1 font-mono text-xs"
+            title={
+              (alt.interchangeClass === "one_way"
+                ? "One-way: this part may be replaced by the alternate"
+                : "Two-way: fully interchangeable") +
+              (alt.manufacturer ? ` — ${alt.manufacturer}` : "") +
+              (alt.type ? ` (type ${alt.type})` : "")
+            }
+          >
+            {alt.prefer && (
+              <Star className="h-3 w-3 text-[var(--warning)] fill-[var(--warning)]" />
+            )}
+            {alt.pn}
+            <span
+              className={`ml-0.5 rounded px-1 text-[10px] font-sans font-medium ${
+                alt.interchangeClass === "one_way"
+                  ? "bg-[var(--warning)]/15 text-[var(--warning)]"
+                  : "bg-[var(--success)]/15 text-[var(--success)]"
+              }`}
+            >
+              {alt.interchangeClass === "one_way" ? "1-way" : "2-way"}
+            </span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const LLP_PAGE_SIZE = 15;
+
+// Four-band + expired colour scale keyed on % of life remaining
+// (cyclesRemaining / cycleLimit). Tightens as parts approach their limit so
+// at-risk units "pop" in the Time Remaining column and detail panel.
+function llpBand(remaining: number | null, limit: number | null) {
+  if (remaining == null || limit == null || limit <= 0) {
+    return { badge: "bg-muted text-muted-foreground", bar: "bg-muted-foreground", label: "No limit" };
+  }
+  if (remaining <= 0)
+    return { badge: "bg-red-600 text-white", bar: "bg-red-600", label: "Expired" };
+  const pct = remaining / limit;
+  if (pct < 0.05)
+    return { badge: "bg-red-500/15 text-red-600 ring-1 ring-inset ring-red-500/30", bar: "bg-red-500", label: "Critical (<5%)" };
+  if (pct < 0.1)
+    return { badge: "bg-orange-500/15 text-orange-600 ring-1 ring-inset ring-orange-500/30", bar: "bg-orange-500", label: "Urgent (<10%)" };
+  if (pct < 0.2)
+    return { badge: "bg-amber-500/15 text-amber-600 ring-1 ring-inset ring-amber-500/30", bar: "bg-amber-500", label: "Watch (<20%)" };
+  return { badge: "bg-emerald-500/15 text-emerald-700 ring-1 ring-inset ring-emerald-500/30", bar: "bg-emerald-500", label: "OK (≥20%)" };
+}
+
+const LLP_LEGEND: { label: string; dot: string }[] = [
+  { label: "Expired", dot: "bg-red-600" },
+  { label: "<5%", dot: "bg-red-500" },
+  { label: "<10%", dot: "bg-orange-500" },
+  { label: "<20%", dot: "bg-amber-500" },
+  { label: "≥20%", dot: "bg-emerald-500" },
+];
+
+// Life-Limited Parts status widget. Pulls every serialized instance of the
+// engineering LLP catalog from /api/llp (worst-first by cycles remaining),
+// then does all search / sort / paging in memory over the cached dataset so
+// typing and paging never refetch. Preserves the click→right-detail pattern.
+function LLPStatusTable({ initialSearch }: { initialSearch: string }) {
+  const { data, source } = useLakebaseData<Part>("/api/llp");
+  const [search, setSearch] = useState(initialSearch);
+  const [page, setPage] = useState(0);
+  const [selectedPart, setSelectedPart] = useState<Part | null>(null);
+  const loading = source === "loading";
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const rows = q
+      ? data.filter(
+          (p) =>
+            p.partNumber.toLowerCase().includes(q) ||
+            p.serialNumber.toLowerCase().includes(q) ||
+            p.description.toLowerCase().includes(q),
+        )
+      : data;
+    return [...rows].sort(
+      (a, b) => (a.cyclesRemaining ?? Infinity) - (b.cyclesRemaining ?? Infinity),
+    );
+  }, [data, search]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / LLP_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageRows = filtered.slice(
+    safePage * LLP_PAGE_SIZE,
+    safePage * LLP_PAGE_SIZE + LLP_PAGE_SIZE,
+  );
+  const firstRow = filtered.length === 0 ? 0 : safePage * LLP_PAGE_SIZE + 1;
+  const lastRow = safePage * LLP_PAGE_SIZE + pageRows.length;
+
+  const onSearch = (value: string) => {
+    setSearch(value);
+    setPage(0);
+    setSelectedPart(null);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-[var(--warning)]" />
+              Life-Limited Parts (LLP) Status
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+              <Plane className="h-3.5 w-3.5" />
+              To view LLP status by engine, navigate to the Engines tab
+            </p>
+            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+              <MousePointerClick className="h-3.5 w-3.5" />
+              Select a unit for more details
+            </p>
+          </div>
+          <ConnectionStatus source={source} context="LLP" />
+        </div>
+
+        {/* Colour legend for the Time Remaining bands */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          <span className="font-medium">Cycles remaining:</span>
+          {LLP_LEGEND.map((l) => (
+            <span key={l.label} className="inline-flex items-center gap-1">
+              <span className={`h-2 w-2 rounded-full ${l.dot}`} />
+              {l.label}
+            </span>
+          ))}
+        </div>
+
+        {/* Enclosed search — scoped to this LLP tool only */}
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search LLPs by P/N, S/N, or description..."
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            className="pl-10"
+            data-testid="parts-search-input"
+            aria-label="Search life-limited parts"
+          />
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        {loading ? (
+          <Skeleton className="h-96 w-full" />
+        ) : (
+          <div className="grid lg:grid-cols-3 gap-6">
+            {/* Table + pager */}
+            <div className="lg:col-span-2 space-y-3">
+              <div className="rounded-lg border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm" data-testid="parts-table">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">P/N</th>
+                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">S/N</th>
+                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">Description</th>
+                        <th className="py-2.5 px-3 text-right font-medium text-muted-foreground" title="Cycles Since New">CSN</th>
+                        <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Life Limit</th>
+                        <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">Time Remaining</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                            No life-limited parts match your search.
+                          </td>
+                        </tr>
+                      ) : (
+                        pageRows.map((p) => {
+                          const band = llpBand(p.cyclesRemaining, p.cycleLimit);
+                          return (
+                            <tr
+                              key={p.serialNumber}
+                              className={`border-b last:border-0 cursor-pointer transition-colors ${selectedPart?.serialNumber === p.serialNumber ? "bg-accent/10" : "hover:bg-muted/50"}`}
+                              onClick={() => setSelectedPart(p)}
+                              role="link"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") setSelectedPart(p);
+                              }}
+                            >
+                              <td className="py-2 px-3 font-mono text-xs">{p.partNumber}</td>
+                              <td className="py-2 px-3 font-mono text-xs">{p.serialNumber}</td>
+                              <td className="py-2 px-3">{p.description}</td>
+                              <td className="py-2 px-3 text-right tabular-nums">{p.csn.toLocaleString()}</td>
+                              <td className="py-2 px-3 text-right tabular-nums">{p.cycleLimit?.toLocaleString() ?? "—"}</td>
+                              <td className="py-2 px-3 text-right">
+                                <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ${band.badge}`}>
+                                  {p.cyclesRemaining?.toLocaleString() ?? "—"}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Pager — keeps the widget to one screenful instead of 2,000 rows */}
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  {filtered.length === 0
+                    ? "No parts"
+                    : `Showing ${firstRow.toLocaleString()}–${lastRow.toLocaleString()} of ${filtered.length.toLocaleString()}`}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={() => setPage(Math.max(0, safePage - 1))}
+                    disabled={safePage === 0}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                  </button>
+                  <span>
+                    Page {safePage + 1} of {pageCount}
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-md border px-2 py-1 hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
+                    disabled={safePage >= pageCount - 1}
+                  >
+                    Next <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Detail panel — preserved click→right-detail behaviour */}
+            <div>
+              {selectedPart ? (
+                <Card data-testid="part-detail">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Package className="h-4 w-4" />
+                      {selectedPart.description}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4 text-sm">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-muted-foreground text-xs">P/N</p>
+                        <p className="font-mono text-xs font-medium">{selectedPart.partNumber}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">S/N</p>
+                        <p className="font-mono text-xs font-medium">{selectedPart.serialNumber}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">CSN</p>
+                        <p className="font-semibold">{selectedPart.csn.toLocaleString()} cyc</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Life Limit</p>
+                        <p className="font-semibold">
+                          {selectedPart.cycleLimit?.toLocaleString() ?? "—"} cyc
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <p className="text-xs text-muted-foreground mb-2">Installation</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-muted-foreground text-xs">Engine installed on</p>
+                          <p className="font-mono text-xs font-medium">
+                            {selectedPart.engineSN || "—"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground text-xs">Tail installed on</p>
+                          <p className="font-medium">{selectedPart.tail || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground text-xs">Engine position on tail</p>
+                          <p className="font-medium">{selectedPart.position || "—"}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <p className="text-xs text-muted-foreground mb-2">LLP Status</p>
+                      {(() => {
+                        const band = llpBand(selectedPart.cyclesRemaining, selectedPart.cycleLimit);
+                        const limit = selectedPart.cycleLimit ?? 0;
+                        const remaining = selectedPart.cyclesRemaining ?? 0;
+                        const consumedPct =
+                          limit > 0
+                            ? Math.min(100, Math.max(0, ((limit - remaining) / limit) * 100))
+                            : 0;
+                        return (
+                          <div className="bg-muted p-3 rounded space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs">Time Remaining</span>
+                              <span className={`rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ${band.badge}`}>
+                                {selectedPart.cyclesRemaining?.toLocaleString() ?? "—"} cyc · {band.label}
+                              </span>
+                            </div>
+                            <div className="h-2 rounded-full bg-background overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${band.bar}`}
+                                style={{ width: `${consumedPct}%` }}
+                              />
+                            </div>
+                            <p className="text-[11px] text-muted-foreground text-right">
+                              {consumedPct.toFixed(0)}% of life consumed
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {selectedPart.partNumber && (
+                      <InterchangeablePanel pn={selectedPart.partNumber} />
+                    )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardContent className="py-8 text-center text-muted-foreground">
+                    Select a part to view details
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function PartsPage() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const initialSearch = searchParams.get("search") ?? "";
-  const [search, setSearch] = useState(initialSearch);
-  const [selectedPart, setSelectedPart] = useState<Part | null>(null);
   // Fuel Injector is overhauled at shop visit and isn't reliably posted back
   // to the ERP, so its soft-time data is known to be unreliable. Default to
   // hidden; the toggle in the Soft Time Recommendations header controls both
   // this widget and the Overhaul Budget Forecast widget below it.
   const [showFuelInjector, setShowFuelInjector] = useState(false);
-  const { data: parts, source } = useLakebaseData<Part>("/api/parts");
-  const loading = source === "loading";
-
-  const filtered = parts.filter((p) => {
-    const q = search.toLowerCase();
-    return (
-      p.partNumber.toLowerCase().includes(q) ||
-      p.serialNumber.toLowerCase().includes(q) ||
-      p.description.toLowerCase().includes(q) ||
-      p.engineSN.toLowerCase().includes(q) ||
-      p.tail.toLowerCase().includes(q)
-    );
-  });
+  // Interchangeable-parts rule: when on (default), the soft-time and overhaul-budget
+  // widgets include every physically-equivalent alternate P/N so no unit is missed.
+  const [inclInterchange, setInclInterchange] = useState(true);
 
   return (
     <div className="space-y-6" data-testid="parts-page">
       <div>
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-2xl font-bold tracking-tight" data-testid="parts-heading">
-            Parts Search
-          </h2>
-          <ConnectionStatus source={source} context="parts" />
-        </div>
+        <h2 className="text-2xl font-bold tracking-tight" data-testid="parts-heading">
+          Parts Search
+        </h2>
         <p className="text-muted-foreground mt-1">
           Search by Part Number, Serial Number, or Engine S/N
         </p>
       </div>
 
       {/* Soft Time Recommendations */}
-      <SoftTimesTable showFuelInjector={showFuelInjector} onToggleFuelInjector={setShowFuelInjector} />
+      <SoftTimesTable
+        showFuelInjector={showFuelInjector}
+        onToggleFuelInjector={setShowFuelInjector}
+        inclInterchange={inclInterchange}
+        onToggleInterchange={setInclInterchange}
+      />
 
       {/* Overhaul Budget Forecast */}
-      <OverhaulForecast showFuelInjector={showFuelInjector} />
+      <OverhaulForecast showFuelInjector={showFuelInjector} inclInterchange={inclInterchange} />
 
-      {/* Search — scopes only the parts table below */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="1301M91G05, FCU-4421, ESN-31042..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-10"
-          data-testid="parts-search-input"
-          aria-label="Search parts"
-        />
-      </div>
-
-      {loading ? (
-        <Skeleton className="h-96 w-full" />
-      ) : filtered.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            No parts match your search.
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Table */}
-          <div className="lg:col-span-2">
-            <Card>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm" data-testid="parts-table">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          P/N
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          S/N
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          Description
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          Tail
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
-                          Condition
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground" title="Cycles Since New">
-                          CSN
-                        </th>
-                        <th className="py-2.5 px-3 text-left font-medium text-muted-foreground" title="Life-Limited Part status">
-                          LLP
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((p) => (
-                        <tr
-                          key={p.serialNumber}
-                          className={`border-b last:border-0 cursor-pointer transition-colors ${selectedPart?.serialNumber === p.serialNumber ? "bg-accent/10" : "hover:bg-muted/50"}`}
-                          onClick={() => setSelectedPart(p)}
-                          role="link"
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ")
-                              setSelectedPart(p);
-                          }}
-                        >
-                          <td className="py-2 px-3 font-mono text-xs">
-                            {p.partNumber}
-                          </td>
-                          <td className="py-2 px-3 font-mono text-xs">
-                            {p.serialNumber}
-                          </td>
-                          <td className="py-2 px-3">{p.description}</td>
-                          <td className="py-2 px-3">{p.tail}</td>
-                          <td className="py-2 px-3">
-                            <ConditionBadge condition={p.condition} />
-                          </td>
-                          <td className="py-2 px-3">
-                            {p.csn.toLocaleString()}
-                          </td>
-                          <td className="py-2 px-3">
-                            {p.isLLP ? (
-                              <span
-                                className={`text-xs font-semibold ${(p.cyclesRemaining ?? Infinity) < 1000 ? "text-destructive" : "text-[var(--success)]"}`}
-                              >
-                                {p.cyclesRemaining?.toLocaleString()} rem
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Detail Panel */}
-          <div>
-            {selectedPart ? (
-              <Card data-testid="part-detail">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Package className="h-4 w-4" />
-                    {selectedPart.description}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 text-sm">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-muted-foreground text-xs">P/N</p>
-                      <p className="font-mono text-xs font-medium">
-                        {selectedPart.partNumber}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">S/N</p>
-                      <p className="font-mono text-xs font-medium">
-                        {selectedPart.serialNumber}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Engine</p>
-                      <p
-                        className="font-mono text-xs font-medium cursor-pointer text-accent hover:underline"
-                        onClick={() =>
-                          navigate(
-                            `/engines?search=${encodeURIComponent(selectedPart.engineSN)}`
-                          )
-                        }
-                        role="link"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ")
-                            navigate(
-                              `/engines?search=${encodeURIComponent(selectedPart.engineSN)}`
-                            );
-                        }}
-                      >
-                        {selectedPart.engineSN}{" "}
-                        <ArrowRight className="inline h-3 w-3" />
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Position</p>
-                      <p className="font-medium">{selectedPart.position}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Tail</p>
-                      <p className="font-medium">{selectedPart.tail}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">
-                        Condition
-                      </p>
-                      <ConditionBadge condition={selectedPart.condition} />
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Location</p>
-                      <p className="font-medium">{selectedPart.location}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">ATA</p>
-                      <p className="font-medium">{selectedPart.ata}</p>
-                    </div>
-                  </div>
-
-                  <div className="border-t pt-3">
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Life Metrics
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="bg-muted p-2 rounded">
-                        <p className="text-muted-foreground">TSN</p>
-                        <p className="font-semibold">
-                          {selectedPart.tsn.toLocaleString()} hrs
-                        </p>
-                      </div>
-                      <div className="bg-muted p-2 rounded">
-                        <p className="text-muted-foreground">CSN</p>
-                        <p className="font-semibold">
-                          {selectedPart.csn.toLocaleString()} cyc
-                        </p>
-                      </div>
-                      <div className="bg-muted p-2 rounded">
-                        <p className="text-muted-foreground">TSO</p>
-                        <p className="font-semibold">
-                          {selectedPart.tso.toLocaleString()} hrs
-                        </p>
-                      </div>
-                      <div className="bg-muted p-2 rounded">
-                        <p className="text-muted-foreground">CSI</p>
-                        <p className="font-semibold">
-                          {selectedPart.csi.toLocaleString()} cyc
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {selectedPart.isLLP && (
-                    <div className="border-t pt-3">
-                      <p className="text-xs text-muted-foreground mb-2">
-                        LLP Status
-                      </p>
-                      <div className="bg-muted p-3 rounded">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs">Cycle Limit</span>
-                          <span className="text-xs font-semibold">
-                            {selectedPart.cycleLimit?.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center mt-1">
-                          <span className="text-xs">Remaining</span>
-                          <span
-                            className={`text-xs font-semibold ${(selectedPart.cyclesRemaining ?? Infinity) < 1000 ? "text-destructive" : "text-[var(--success)]"}`}
-                          >
-                            {selectedPart.cyclesRemaining?.toLocaleString()} cyc
-                          </span>
-                        </div>
-                        <div className="mt-2 h-2 rounded-full bg-background overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${(selectedPart.cyclesRemaining ?? Infinity) < 1000 ? "bg-destructive" : "bg-[var(--success)]"}`}
-                            style={{
-                              width: `${Math.min(100, ((selectedPart.cycleLimit ?? 1) - (selectedPart.cyclesRemaining ?? 0)) / (selectedPart.cycleLimit ?? 1) * 100)}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="border-t pt-3">
-                    <p className="text-xs text-muted-foreground">
-                      Installed {selectedPart.installDate}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardContent className="py-8 text-center text-muted-foreground">
-                  Select a part to view details
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Life-Limited Parts (LLP) Status — replaces the former generic parts table */}
+      <LLPStatusTable initialSearch={initialSearch} />
     </div>
   );
 }

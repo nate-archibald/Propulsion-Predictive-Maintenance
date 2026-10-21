@@ -14,6 +14,19 @@ import type { EngineConfig, APUConfig } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
 import { ConditionBadge, Toggle } from "../components/qx-ui";
 
+// Time-remaining badge colour for LLPs in the engine build-up. Mirrors the
+// Parts-page LLP scale but deliberately OMITS the green ≥20% band: when the whole
+// fleet is healthy we don't want a wall of green — colour only appears under 20%.
+function llpRemainClass(remaining: number | null, limit: number | null): string | null {
+  if (remaining == null || limit == null || limit <= 0) return null;
+  if (remaining <= 0) return "bg-red-600 text-white";
+  const pct = remaining / limit;
+  if (pct < 0.05) return "bg-red-500/15 text-red-600 ring-1 ring-inset ring-red-500/30";
+  if (pct < 0.1) return "bg-orange-500/15 text-orange-600 ring-1 ring-inset ring-orange-500/30";
+  if (pct < 0.2) return "bg-amber-500/15 text-amber-600 ring-1 ring-inset ring-amber-500/30";
+  return null;
+}
+
 export default function EnginesPage() {
   const [searchParams] = useSearchParams();
   const initialSearch = searchParams.get("search") ?? "";
@@ -29,11 +42,24 @@ export default function EnginesPage() {
     description: string;
     condition: string;
     position: string | null;
+    tsn: number | null;
+    csn: number | null;
+    isLLP: boolean;
+    cycleLimit: number | null;
+    cyclesRemaining: number | null;
     children: BuildUpPart[];
   }
-  
+  // LLP parts hoisted out of the hierarchy to the top of the list, carrying the
+  // assembly they were installed in for context.
+  interface LlpPart extends BuildUpPart {
+    parentSn: string;
+    parentPn: string;
+    parentDescription: string;
+  }
+
   const buildUpRef = useRef<HTMLDivElement>(null);
   const [buildUp, setBuildUp] = useState<BuildUpPart[]>([]);
+  const [llps, setLlps] = useState<LlpPart[]>([]);
   const [buildUpLoading, setBuildUpLoading] = useState(false);
   const [expandedSns, setExpandedSns] = useState<Set<string>>(new Set());
 
@@ -42,6 +68,7 @@ export default function EnginesPage() {
     const sn = selectedTab === "engines" ? selectedEngine?.engineSN : selectedAPU?.apuSN;
     if (!sn) {
       setBuildUp([]);
+      setLlps([]);
       return;
     }
     setBuildUpLoading(true);
@@ -50,8 +77,12 @@ export default function EnginesPage() {
       .then((r) => r.json())
       .then((d) => {
         setBuildUp(d.data || []);
+        setLlps(d.llps || []);
       })
-      .catch(() => setBuildUp([]))
+      .catch(() => {
+        setBuildUp([]);
+        setLlps([]);
+      })
       .finally(() => setBuildUpLoading(false));
   }, [selectedEngine, selectedAPU, selectedTab]);
 
@@ -70,6 +101,23 @@ export default function EnginesPage() {
     setSelectedAPU(null);
   };
 
+  const fmtNum = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString());
+
+  // Time Remaining cell: coloured badge for LLPs under 20% life, plain number
+  // otherwise (and "—" for non-LLPs, which have no limit).
+  const renderRemaining = (part: BuildUpPart) => {
+    if (!part.isLLP) return <span className="text-muted-foreground">—</span>;
+    const cls = llpRemainClass(part.cyclesRemaining, part.cycleLimit);
+    const text = part.cyclesRemaining == null ? "—" : part.cyclesRemaining.toLocaleString();
+    return cls ? (
+      <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ${cls}`}>
+        {text}
+      </span>
+    ) : (
+      <span className="tabular-nums">{text}</span>
+    );
+  };
+
   // Renders the installed-parts build-up panel content shared by the top and bottom collapse triggers
   const renderBuildUpPanelBody = (position: "top" | "bottom") => (
     <>
@@ -80,7 +128,7 @@ export default function EnginesPage() {
               <Settings className="h-4 w-4" />
               {selectedEngine ? selectedEngine.engineSN : selectedAPU ? selectedAPU.apuSN : ""} — Installed Parts
               <span className="text-xs font-normal text-muted-foreground ml-2">
-                ({buildUp.length} components
+                ({llps.length} life-limited + {buildUp.length} other components
                 {buildUp.some((p) => p.children.length > 0)
                   ? ", click chevron to expand assemblies"
                   : ""})
@@ -102,7 +150,7 @@ export default function EnginesPage() {
       <CardContent>
         {buildUpLoading ? (
           <Skeleton className="h-48 w-full" />
-        ) : buildUp.length === 0 ? (
+        ) : buildUp.length === 0 && llps.length === 0 ? (
           <p className="text-center text-muted-foreground py-8">
             No build-up data available.
           </p>
@@ -124,9 +172,58 @@ export default function EnginesPage() {
                   <th className="py-2.5 px-3 text-left font-medium text-muted-foreground">
                     Condition
                   </th>
+                  <th className="py-2.5 px-3 text-right font-medium text-muted-foreground" title="Time Since New (hours)">
+                    TSN
+                  </th>
+                  <th className="py-2.5 px-3 text-right font-medium text-muted-foreground" title="Cycles Since New">
+                    CSN
+                  </th>
+                  <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">
+                    Life Limit
+                  </th>
+                  <th className="py-2.5 px-3 text-right font-medium text-muted-foreground">
+                    Time Remaining
+                  </th>
                 </tr>
               </thead>
               <tbody>
+                {/* Hoisted Life-Limited Parts — flat, sorted by fewest cycles remaining */}
+                {llps.length > 0 && (
+                  <tr className="border-b bg-amber-500/5">
+                    <td colSpan={9} className="py-1.5 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                        Life-Limited Parts ({llps.length}) — sorted by fewest cycles remaining
+                      </span>
+                    </td>
+                  </tr>
+                )}
+                {llps.map((part) => (
+                  <tr key={`llp-${part.sn}`} className="border-b hover:bg-muted/30">
+                    <td className="py-2 px-3"></td>
+                    <td className="py-2 px-3 font-medium">
+                      {part.description}
+                    </td>
+                    <td className="py-2 px-3 font-mono text-xs">{part.pn}</td>
+                    <td className="py-2 px-3 font-mono text-xs">{part.sn}</td>
+                    <td className="py-2 px-3">
+                      <ConditionBadge condition={part.condition} />
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums">{fmtNum(part.tsn)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{fmtNum(part.csn)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{fmtNum(part.cycleLimit)}</td>
+                    <td className="py-2 px-3 text-right">{renderRemaining(part)}</td>
+                  </tr>
+                ))}
+
+                {/* Remaining installed parts in their assembly hierarchy */}
+                {llps.length > 0 && buildUp.length > 0 && (
+                  <tr className="border-b bg-muted/30">
+                    <td colSpan={9} className="py-1.5 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Other Installed Parts
+                    </td>
+                  </tr>
+                )}
                 {buildUp.map((part) => (
                   <Fragment key={part.sn}>
                     {/* Level 1 row */}
@@ -147,6 +244,10 @@ export default function EnginesPage() {
                       <td className="py-2 px-3">
                         <ConditionBadge condition={part.condition} />
                       </td>
+                      <td className="py-2 px-3 text-right tabular-nums">{fmtNum(part.tsn)}</td>
+                      <td className="py-2 px-3 text-right tabular-nums">{fmtNum(part.csn)}</td>
+                      <td className="py-2 px-3 text-right tabular-nums">{fmtNum(part.cycleLimit)}</td>
+                      <td className="py-2 px-3 text-right">{renderRemaining(part)}</td>
                     </tr>
                     {/* Level 2 rows (expanded children) */}
                     {expandedSns.has(part.sn) &&
@@ -168,6 +269,16 @@ export default function EnginesPage() {
                           <td className="py-1.5 px-3">
                             <ConditionBadge condition={child.condition} />
                           </td>
+                          <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">
+                            {fmtNum(child.tsn)}
+                          </td>
+                          <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">
+                            {fmtNum(child.csn)}
+                          </td>
+                          <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">
+                            {fmtNum(child.cycleLimit)}
+                          </td>
+                          <td className="py-1.5 px-3 text-right">{renderRemaining(child)}</td>
                         </tr>
                       ))}
                   </Fragment>
@@ -176,7 +287,7 @@ export default function EnginesPage() {
             </table>
           </div>
         )}
-        {!buildUpLoading && buildUp.length > 0 && (
+        {!buildUpLoading && (buildUp.length > 0 || llps.length > 0) && (
           <div className="flex justify-center pt-3 mt-2 border-t">
             <Button
               variant="outline"

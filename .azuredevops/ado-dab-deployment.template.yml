@@ -1,0 +1,171 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# TEMPLATE: Databricks App (DAB) Deployment Pipeline
+# ═══════════════════════════════════════════════════════════════════════════
+# PLACEHOLDER REFERENCE
+#   <TEAM_FOLDER>            e.g. Cargo, Baggage, Ops        (workspace root folder)
+#   <SONAR_PROJECT_KEY>      e.g. my-team-my-app              (unique per repo in SonarQube)
+#   <SONAR_PROJECT_NAME>     usually same as the key
+#   <SERVICE_CONNECTION_ENDPOINT>  ADO service connection name for GitHub repo access
+#   <TEST_WORKSPACE_HOST>    e.g. https://adb-xxxxxxxxxxxxxxxx.x.azuredatabricks.net
+#   <QA_WORKSPACE_HOST>      separate workspace host for QA (or same as test, if shared)
+#   <PROD_WORKSPACE_HOST>    separate workspace host for Prod
+#   <TEST_APP_NAME>          Databricks App name for the test/dev target
+#   <QA_APP_NAME>            Databricks App name for the qa/staging target
+#   <PROD_APP_NAME>          Databricks App name for the prod target
+#
+# NOTE ON APP NAMES: these must match the `app_name` values (and the
+# `apps.<key>.name`) defined per-target in your databricks.yml bundle —
+# NOT necessarily your repo/git name. Don't assume they're the same.
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: DAB-Deployment_$(Build.SourceBranchName)_$(Date:yyyyMMdd)
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - '*.md'
+
+# No PR-validation build. The deploy stages have no branch guard, so a `pr:`
+# trigger would deploy the un-merged PR branch to Test. On GitHub-backed
+# pipelines PR triggers are ON by default, so this MUST be an explicit `pr: none`.
+pr: none
+
+variables:
+  # Workspace root the bundle deploys under:
+  #   /<team_folder>/Products/app_name/<target>/files
+  - name: team_folder
+    value: <TEAM_FOLDER>
+  - name: sonar_project_key
+    value: <SONAR_PROJECT_KEY> # change this name if you want to use a different SonarQube project for this repo
+  - name: sonar_project_name
+    value: <SONAR_PROJECT_NAME> # change this name if you want to use a different SonarQube project for this repo
+
+resources:
+  repositories:
+    # templates for deploying the Databricks App (DAB) and scanning for missing tags on jobs.
+    - repository: data_devops_templates # alias used in template references below
+      type: github
+      name: Alaska-Airlines-Shared/data-devops
+      endpoint: '<SERVICE_CONNECTION_ENDPOINT>'
+      ref: refs/tags/v1.2.2
+
+    # templates for the SonarScans
+    - repository: devops_templates # alias used in template references below
+      type: github
+      name: Alaska-Airlines-Shared/DevOps
+      endpoint: '<SERVICE_CONNECTION_ENDPOINT>'
+      ref: refs/heads/main
+
+stages:
+
+  - stage: approve_test
+    displayName: Approve deploy to Test
+    dependsOn: []
+    jobs:
+      - job: approve_test
+        displayName: Waiting for approval to deploy to Test
+        pool: server
+        timeoutInMinutes: 1440
+        steps:
+          - task: ManualValidation@0
+            timeoutInMinutes: 1440
+            inputs:
+              notifyUsers: $(Build.RequestedForEmail)
+              instructions: 'Approve to deploy $(Build.SourceVersion) to the Test workspace. The SonarQube scans start at the same moment — nothing scans before this.'
+              onTimeout: 'reject'
+
+  - template: databricks/DeployDatabricksAppTemplate.yml@data_devops_templates
+    parameters:
+      env: test
+      target: test
+      workspaceHost: <TEST_WORKSPACE_HOST>
+      appName: <TEST_APP_NAME>
+
+  - stage: SonarScanPython
+    displayName: Python SonarQube Analysis
+    dependsOn: approve_test
+    jobs:
+      - job: SonarQubePythonAnalysis
+        displayName: Run Python SonarQube analysis
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+          - template: YAML/Builds/Python/Continuous-Integration-Python-Template.yml@devops_templates
+            parameters:
+              ProjectKey: '$(sonar_project_key)-python'
+              ProjectName: '$(sonar_project_name)-python'
+              # PathToSourceCode/PathToUnitTests MUST point at a folder that
+              # actually exists in your repo, or the scan fails with
+              # "Invalid value of sonar.sources" / "folder does not exist".
+              # Update <PYTHON_SOURCE_PATH> below (e.g. "pipelines", "src",
+              # or "$(Build.SourcesDirectory)" if Python files live at repo root).
+              PathToSourceCode: '$(Build.SourcesDirectory)/<PYTHON_SOURCE_PATH>'
+              PathToUnitTests: '$(Build.SourcesDirectory)/<PYTHON_SOURCE_PATH>'
+              RequirementsFilePath: '$(Build.SourcesDirectory)/requirements.txt'
+              PythonVersion: '3.10'
+              ContainsTests: 'false'
+              ExtraProperties: |
+                sonar.test.inclusions=**/test_*.py
+                sonar.exclusions=client/dist/**,dist/**,node_modules/**
+
+  - stage: SonarScanReact
+    displayName: React SonarQube Analysis
+    dependsOn: approve_test
+    jobs:
+      - job: ReactSonarQubeAnalysis
+        displayName: Run React SonarQube analysis
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+          - script: |
+              mkdir -p "$(Agent.TempDirectory)/.npm-global"
+              npm config set prefix "$(Agent.TempDirectory)/.npm-global"
+              echo "##vso[task.setvariable variable=NPM_CONFIG_PREFIX]$(Agent.TempDirectory)/.npm-global"
+              echo "##vso[task.prependpath]$(Agent.TempDirectory)/.npm-global/bin"
+            displayName: Configure npm prefix (avoid EACCES on system dirs)
+          - template: YAML/Builds/Security/SonarQubeScanNode.yml@devops_templates
+            parameters:
+              UnitTestScript: 'run test:ci'
+              projectKey: '$(sonar_project_key)-react'
+              projectName: '$(sonar_project_name)-react'
+              CodeCoverageFileName: 'cobertura-coverage.xml'
+              CodeCoverageFileLocation: '$(Build.SourcesDirectory)/coverage'
+              ProjectFolderPath: '$(Build.SourcesDirectory)'
+              NpmVersion: '10.x'
+              NodeVersion: '20.x'
+              NpmPackageInstallCommand: 'install'
+              Scannedsources: '$(Build.SourcesDirectory)/client/src'
+              ServiceConnection: 'AAGSonarQube-$(System.TeamProject)'
+              ExtraProperties: |
+                sonar.sources=$(Build.SourcesDirectory)/client/src
+                sonar.exclusions=**/node_modules/**,**/*.spec.ts,**/*mocks/**,**/*mock*/**,**/*mocks*/**,**/*.mock.*/**,**/*.mocks.*/**
+                sonar.tests=$(Build.SourcesDirectory)/tests
+                sonar.test.inclusions=**/*.test.ts,**/*.test.tsx
+                sonar.typescript.lcov.reportPaths=$(Build.SourcesDirectory)/coverage/lcov.info
+                sonar.javascript.lcov.reportPaths=$(Build.SourcesDirectory)/coverage/lcov.info
+
+  - template: databricks/DeployDatabricksAppTemplate.yml@data_devops_templates
+    parameters:
+      env: qa
+      appName: <QA_APP_NAME>
+      target: qa
+      workspaceHost: <QA_WORKSPACE_HOST>
+      manualTrigger: true
+      requireStages:
+        - deployment_test
+        - SonarScanPython
+        - SonarScanReact
+
+  - template: databricks/DeployDatabricksAppTemplate.yml@data_devops_templates
+    parameters:
+      env: prod
+      appName: <PROD_APP_NAME>
+      target: prod
+      workspaceHost: <PROD_WORKSPACE_HOST>
+      dependsOn:
+        - deployment_qa

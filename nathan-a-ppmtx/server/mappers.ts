@@ -68,25 +68,17 @@ export function mapDefectByAta(r: Row): Row {
 }
 
 export function mapWeeklyTrend(r: Row): Row {
-  const weekNum = num(r.week);
-  const year = new Date().getFullYear();
-  
-  // Calculate the Sunday of the given ISO week
-  // ISO week 1 is the week with the first Thursday of the year
-  const jan4 = new Date(year, 0, 4);
-  const mondayOfWeek1 = new Date(jan4);
-  mondayOfWeek1.setDate(jan4.getDate() - jan4.getDay() + 1);
-  
-  // Add (weekNum - 1) * 7 days to get Monday of target week, then add 6 for Sunday
-  const sundayOfWeek = new Date(mondayOfWeek1);
-  sundayOfWeek.setDate(mondayOfWeek1.getDate() + (weekNum - 1) * 7 + 6);
-  
-  const dateStr = sundayOfWeek.toISOString().split('T')[0];
-  
-  return { 
+  // The week-ending calendar date is computed by the warehouse (MAX(calendar_date)
+  // per (year, week_of_year) group in the SQL query) rather than re-derived here.
+  // A prior version recalculated it from the week number in JS using a hand-rolled
+  // ISO-week formula that didn't match the warehouse's week numbering and was
+  // consistently off by one week — this avoids that class of bug entirely.
+  const dateStr = String(r.week_end_date ?? "");
+  return {
     week: dateStr,
     weekLabel: dateStr,
-    count: num(r.count) 
+    count: num(r.count),
+    delayMinutes: num(r.delay_minutes),
   };
 }
 
@@ -137,6 +129,41 @@ export function mapEngine(r: Row): Row {
     totalCycles: num(r.total_cycles),
     lastShopVisit: isoDate(r.last_shop_visit),
     parts: [],
+  };
+}
+
+// Engine Removal Plan — HSR Data row (live Time Since HSR / soft-time reset).
+// Backed by the gold reconstruction qx_ppmtx_synced_gold_engine_tshsi joined to
+// fact_inventory_snapshot for the installed position.
+export function mapHsrEngine(r: Row): Row {
+  const rawPos = String(r.position ?? "").trim();
+  const position =
+    rawPos === "LH ENG" ? "ENG-1" : rawPos === "RH ENG" ? "ENG-2" : rawPos;
+
+  const installed = Boolean(r.currently_installed);
+
+  // Projection (bindingConstraint / projectedRemovalDate / daysToRemoval) is
+  // computed on the client from a user-adjustable fleet utilization assumption
+  // (FH/day, FC/day), so this mapper only returns the raw ingredients. The
+  // per-engine hrs/cyc-per-day are passed through as OBSERVED context only.
+  return {
+    engineSN: String(r.engine_sn ?? ""),
+    pn: String(r.pn ?? ""),
+    resetDate: isoDate(r.reset_date),
+    tshsi: num(r.tshsi),
+    hsrTarget: num(r.hsr_target),
+    tshsrRemaining: num(r.tshsr_remaining),
+    currentlyInstalled: installed,
+    installedAC: r.installed_ac ? String(r.installed_ac) : "",
+    position,
+    onWingPeriods: num(r.on_wing_periods),
+    hrsPerDay: numOrNull(r.hrs_per_day),
+    cyclesPerDay: numOrNull(r.cycles_per_day),
+    utilWindowDays: numOrNull(r.util_window_days),
+    minCyclesRemaining: numOrNull(r.min_cyc_remaining),
+    bindingLlpPN: r.binding_llp_pn ? String(r.binding_llp_pn) : "",
+    bindingLlpSN: r.binding_llp_sn ? String(r.binding_llp_sn) : "",
+    asOfDate: isoDate(r.as_of_date),
   };
 }
 

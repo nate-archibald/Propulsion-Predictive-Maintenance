@@ -76,6 +76,25 @@ All 13 Gold tables were synced, migrated, and renamed with the `qx_ppmtx_synced_
 | 12 | `qx_ppmtx_synced_gold_fact_teardown` | 78,372 |
 | 13 | `qx_ppmtx_synced_gold_bridge_defect_part` | 44,334 |
 
+To add interchangeable-parts support, a **14th** synced table is introduced
+(created by `n_archibald_ppmtx_dab/scripts/create_synced_interchangeable_table.py`,
+auto-refreshed by the existing `refresh_synced_tables.py` via the `qx_ppmtx_synced_gold_`
+prefix; grant the app SP `SELECT` on it like the other 13):
+
+| # | Synced table (Postgres) | Source Gold table |
+|---|-------------------------|-------------------|
+| 14 | `qx_ppmtx_synced_gold_bridge_part_interchangeable` | `qx_ppmtx_gold_bridge_part_interchangeable` (two-way + one-way PN interchangeability, directed pairs) |
+
+**Status: LIVE.** Deployed 2026-09-25 — `SYNCED_TABLE_ONLINE_NO_PENDING_UPDATE`, **138,163 rows**
+(131,890 two-way + 6,273 one-way). Created via the **Autoscaling** Postgres API
+(`POST /api/2.0/postgres/synced_tables`, `spec.branch = projects/nathan-a-ppmtx/branches/production`),
+NOT the classic `create_synced_database_table` (which fails with "Database instance is not found" —
+this app is an Autoscaling *project*, not a database instance). The Gold PK
+`bridge_part_interchangeable_key` is a 64-bit `xxhash64` surrogate; a 32-bit `hash()` collides across
+~138K rows and the initial sync fails with `PRIMARY_KEY_CONSTRAINT_VIOLATION`. The app SP was granted
+`USAGE` + `SELECT` (idempotent, verified `has_table_privilege = true`) by
+`scripts/grant_interchangeable_sp.py`.
+
 Full column/type/NULL/enum profiles: see `docs/lakebase_schema_discovery.md`.
 
 ## ✅ Cross-Workspace Deploy Caveat — RESOLVED

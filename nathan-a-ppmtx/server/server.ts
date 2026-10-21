@@ -1672,13 +1672,14 @@ await createApp({
           : `p.pn = '${ENGINE_PN.replace(/'/g, "''")}'`;
         
         try {
-          // Spares are whole engines/APUs that are:
-          // 1. Not currently installed (installed_ac IS NULL)
-          // 2. Not on an active RO (order_type='RO' AND status='OPEN')
-          //
-          // A unit sitting in the "R/I BIN" has come back from repair but has not
-          // yet been received/inspected, so it is not yet serviceable — surface it
-          // separately as "pending inspection" rather than as an available spare.
+          // Spares are whole engines/APUs that are not currently installed
+          // (installed_ac IS NULL). Each uninstalled unit is classified into one
+          // of three states so the widget can show ALL spare engines:
+          //   • in_repair — has an OPEN Repair Order (order_type='RO', status='OPEN');
+          //       physically still at the shop but owned as a spare.
+          //   • pending   — sitting in the "R/I BIN": returned from repair but not
+          //       yet received/inspected, so not yet serviceable.
+          //   • available — serviceable and ready to install.
           const result = await executeQuery(
             req,
             appkit,
@@ -1691,28 +1692,40 @@ await createApp({
                  AND fs.installed_ac IS NULL
                GROUP BY fs.sn
              ),
-             no_active_ro AS (
-               SELECT sc.sn, sc.is_pending
+             open_ro AS (
+               SELECT DISTINCT sn
+               FROM ${S}.qx_ppmtx_synced_gold_fact_order
+               WHERE order_type = 'RO' AND status = 'OPEN'
+             ),
+             classified AS (
+               SELECT sc.sn,
+                      CASE
+                        WHEN ro.sn IS NOT NULL THEN 'in_repair'
+                        WHEN sc.is_pending THEN 'pending'
+                        ELSE 'available'
+                      END AS state
                FROM spare_candidates sc
-               LEFT JOIN ${S}.qx_ppmtx_synced_gold_fact_order fo ON sc.sn = fo.sn
-                 AND fo.order_type = 'RO' AND fo.status = 'OPEN'
-               WHERE fo.fact_order_key IS NULL
+               LEFT JOIN open_ro ro ON sc.sn = ro.sn
              )
              SELECT
-               array_agg(sn ORDER BY sn) FILTER (WHERE NOT is_pending)::text[] AS esns,
-               count(*) FILTER (WHERE NOT is_pending)::int AS total,
-               array_agg(sn ORDER BY sn) FILTER (WHERE is_pending)::text[] AS pending_esns,
-               count(*) FILTER (WHERE is_pending)::int AS pending_total
-             FROM no_active_ro`,
+               array_agg(sn ORDER BY sn) FILTER (WHERE state = 'available')::text[] AS esns,
+               count(*) FILTER (WHERE state = 'available')::int AS total,
+               array_agg(sn ORDER BY sn) FILTER (WHERE state = 'pending')::text[] AS pending_esns,
+               count(*) FILTER (WHERE state = 'pending')::int AS pending_total,
+               array_agg(sn ORDER BY sn) FILTER (WHERE state = 'in_repair')::text[] AS repair_esns,
+               count(*) FILTER (WHERE state = 'in_repair')::int AS repair_total
+             FROM classified`,
           );
           
-          const row = result.rows[0] || { esns: [], total: 0, pending_esns: [], pending_total: 0 };
+          const row = result.rows[0] || { esns: [], total: 0, pending_esns: [], pending_total: 0, repair_esns: [], repair_total: 0 };
           res.json({
             data: {
               total: Number(row.total) || 0,
               esns: Array.isArray(row.esns) ? row.esns.filter((e: any) => e != null) : [],
               pendingTotal: Number(row.pending_total) || 0,
               pendingEsns: Array.isArray(row.pending_esns) ? row.pending_esns.filter((e: any) => e != null) : [],
+              repairTotal: Number(row.repair_total) || 0,
+              repairEsns: Array.isArray(row.repair_esns) ? row.repair_esns.filter((e: any) => e != null) : [],
               type: type,
             },
             source: "live",
@@ -1720,7 +1733,7 @@ await createApp({
         } catch (err) {
           console.warn(`[Lakebase] /api/serviceable-spares fallback: ${err}`);
           res.json({
-            data: { total: 0, esns: [], pendingTotal: 0, pendingEsns: [], type: type },
+            data: { total: 0, esns: [], pendingTotal: 0, pendingEsns: [], repairTotal: 0, repairEsns: [], type: type },
             source: "mock",
           });
         }
@@ -1810,7 +1823,7 @@ await createApp({
           "FADEC": ["4120T00P60", "4120T00P63"],
           "FMU": ["4120T01P02", "8061-926"],
           "SEAL PRV": ["421645-2", "4123T61P03"],
-          "ENG FUEL PUMP": ["829500-7", "829500-9"],
+          "ENG FUEL PUMP": ["829500-7", "829500-9", "4120T04P09"],
           "ENG OBV": ["5080046-103", "4123T71P06"],
           "ENG ATS": ["4120T06P10", "3505953-6"],
           "APU ANTI-SURGE VALVE": ["4954226", "4953195-1"],
@@ -1972,7 +1985,10 @@ await createApp({
           // which only reflect the last-known state per defect and undercount/miss
           // delay events tracked at this finer grain. Joined back to fact_defect on
           // (defect_type, defect, defect_item) to inherit the same propulsion-only
-          // ATA chapter scoping as the rest of this KPI set.
+          // ATA chapter scoping as the rest of this KPI set. Cancellations (and some
+          // delays) carry a NULL delay_date, so date scoping falls back to the parent
+          // defect's reported_date via COALESCE — otherwise a selected date range would
+          // silently drop every NULL-dated cancel (NULL >= date is never true).
           const delayAgg = await executeQuery(
             req,
             appkit,
@@ -1984,7 +2000,7 @@ await createApp({
              JOIN ${S}.qx_ppmtx_synced_gold_fact_defect f
                ON fd.defect_type = f.defect_type AND fd.defect = f.defect AND fd.defect_item = f.defect_item
              JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
-             LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON fd.delay_date_key = d.dim_date_key
+             LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON COALESCE(fd.delay_date_key, f.reported_date_key) = d.dim_date_key
              WHERE c.chapter IN (${PROP_ATA_LIST})`,
             [from, to],
           );
@@ -2054,7 +2070,7 @@ await createApp({
           ON fd.defect_type = f.defect_type AND fd.defect = f.defect AND fd.defect_item = f.defect_item
         JOIN ${S}.qx_ppmtx_synced_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
         LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_aircraft a ON fd.dim_aircraft_key = a.dim_aircraft_key
-        LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON fd.delay_date_key = d.dim_date_key
+        LEFT JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON COALESCE(fd.delay_date_key, f.reported_date_key) = d.dim_date_key
         WHERE c.chapter IN (${PROP_ATA_LIST})
           AND ($1::date IS NULL OR d.calendar_date >= $1::date)
           AND ($2::date IS NULL OR d.calendar_date <= $2::date)

@@ -87,10 +87,64 @@ FROM ${bronze_catalog}.${bronze_schema}.qx_trax_order_detail;
 -- ============================================================================
 -- Silver engineering orders - validated EO/EC records (mandatory service bulletins,
 -- ECMP task cards, etc.). Powers the Overview 'ECMP' open-count KPI.
+-- Runs at 6:45 AM Pacific (not UTC) -- 15 min ahead of the 7 AM
+-- America/Los_Angeles Gold merge / Lakebase sync job, so Gold always reads
+-- freshly refreshed Silver data instead of racing it.
 CREATE OR REPLACE MATERIALIZED VIEW ${silver_catalog}.${silver_schema}.qx_ppmtx_engineering_order
+CLUSTER BY AUTO
+REFRESH POLICY INCREMENTAL
+SCHEDULE CRON '0 45 6 * * ?' AT TIME ZONE 'America/Los_Angeles'
+AS
+SELECT *
+FROM ${bronze_catalog}.${bronze_schema}.qx_trax_engineering_order;
+
+-- ============================================================================
+-- 8. qx_ppmtx_pn_interchangeable (Two-Way Interchangeable Part Numbers)
+-- ============================================================================
+-- Silver two-way interchangeability catalog - validated, ACTIVE-only part
+-- equivalence pairs. Feeds the Gold bridge_part_interchangeable table so that
+-- whenever a PN is queried, its interchangeable alternates are resolvable.
+-- Curated projection: the bronze table carries 60+ mostly-null columns; only
+-- the substitution-relevant attributes are retained here.
+CREATE OR REPLACE MATERIALIZED VIEW ${silver_catalog}.${silver_schema}.qx_ppmtx_pn_interchangeable
 CLUSTER BY AUTO
 REFRESH POLICY INCREMENTAL
 SCHEDULE CRON '0 0 7 * * ?' AT TIME ZONE 'UTC'
 AS
-SELECT *
-FROM ${bronze_catalog}.${bronze_schema}.qx_trax_engineering_order;
+SELECT
+  pn,
+  pn_interchangeable,
+  interchangeable_type,
+  prefer,
+  manufacturer,
+  vendor,
+  iic,
+  pma,
+  status,
+  modified_date
+FROM ${bronze_catalog}.${bronze_schema}.qx_trax_pn_interchangeable
+WHERE UPPER(TRIM(status)) = 'ACTIVE';
+
+-- ============================================================================
+-- 9. qx_ppmtx_pn_interchg_one_way (One-Way Interchangeable Part Numbers)
+-- ============================================================================
+-- Silver one-way (directional) interchangeability catalog - pn can be replaced
+-- BY pn_interchangeable, but not necessarily the reverse. Feeds the Gold bridge
+-- alongside the two-way pairs, tagged as one_way so the app can badge and apply
+-- them directionally. This table has no status column in the source.
+CREATE OR REPLACE MATERIALIZED VIEW ${silver_catalog}.${silver_schema}.qx_ppmtx_pn_interchg_one_way
+CLUSTER BY AUTO
+REFRESH POLICY INCREMENTAL
+SCHEDULE CRON '0 0 7 * * ?' AT TIME ZONE 'UTC'
+AS
+SELECT
+  pn,
+  pn_interchangeable,
+  interchangeable_type,
+  pn_inter_type,
+  prefer,
+  vendor,
+  authorization_code,
+  conditional_notes,
+  modified_date
+FROM ${bronze_catalog}.${bronze_schema}.qx_trax_pn_interchg_one_way;

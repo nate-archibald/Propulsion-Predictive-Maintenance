@@ -1195,6 +1195,232 @@ def merge_engine_live_times():
 
 # COMMAND ----------
 
+def merge_engine_tshsi():
+    """Reconstruct LIVE engine TSHSI (Time Since Heavy Shop / HSR) for the whole
+    CF34-8E5 fleet — the core input to the Engine Removal Plan.
+
+    TSHSI = airframe flight-hours accumulated since the engine's LAST HSR / soft-
+    time reset. TRAX stores this as control='RS-SOFT' in inventory_control, but the
+    frozen `actual_hours` is zeroed at the reset and never re-posted (the same
+    frozen-posting bug documented in skills/trax-live-times-reconstruction). So the
+    live value must be reconstructed: sum the airframe cumulative-counter delta over
+    every on-wing period, with each period clipped to START at the RS-SOFT reset
+    date. This differs from merge_engine_live_times (which anchors on original
+    install = TSN) and from merge_part_live_tso (which anchors on the TSO reset) —
+    the anchor here is the RS-SOFT reset specifically.
+
+    Validated against the manual Engine Removal Plan HSR Data export: median abs
+    error 33 hrs, all 96 in-service engines within 50 hrs (see session validation).
+
+    Engines currently off-wing (last event = REMOVE) with no on-wing period since
+    their reset return tshsi = 0 (freshly overhauled / in shop) — the removal-plan
+    author overwrites these manually, consistent with the Word SOP.
+
+    Full-refresh via INSERT OVERWRITE so the declared PRIMARY KEY + CDF (required by
+    the Lakebase synced table qx_ppmtx_synced_gold_engine_tshsi) are preserved."""
+    try:
+        target_table = get_gold_table("qx_ppmtx_gold_engine_tshsi")
+        inv = get_gold_table("qx_ppmtx_gold_fact_inventory_control")
+        snap = get_gold_table("qx_ppmtx_gold_fact_inventory_snapshot")
+        dpart = get_gold_table("qx_ppmtx_gold_dim_part")
+        plt = get_gold_table("qx_ppmtx_gold_part_live_times")
+        txn = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_pn_transaction_history"
+        flt = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_actual_flights"
+
+        # Authoritative LLP life-limit catalog (cycles). Kept in sync with the app's
+        # LLP_LIFE_LIMITS (nathan-a-ppmtx/server/server.ts). The binding LLP per
+        # engine (fewest cycles remaining) is precomputed HERE so the live removal-
+        # plan endpoint only reads one synced table instead of running a heavy
+        # multi-CTE self-join in Lakebase Postgres on every request.
+        llp_life_limits = {
+            "4114T16G02": 25000, "4118T61P01": 25000, "4129T60P02": 25000,
+            "4128T91G05": 25000, "4129T40P01": 25000, "4129T50G04": 25000,
+            "4129T28P05": 25000, "4124T93P04": 25000, "4124T92P02": 25000,
+            "4125T30P02": 25000, "4125T22P04": 24200, "4125T37P02": 25000,
+            "4125T23P04": 24100, "4124T95P03": 25000, "4118T63P02": 25000,
+            "4117T16P01": 25000, "4117T13P05": 25000, "4117T17P01": 25000,
+            "4118T62P01": 25000, "4117T14P02": 25000, "4117T14P03": 25000,
+            "4117T18P01": 25000, "4117T15P02": 25000, "4180T27G03": 41100,
+            "4180T27G07": 25000, "4129T59P02": 25000,
+        }
+        llp_values = ", ".join(
+            f"('{pn}', {lim})" for pn, lim in llp_life_limits.items()
+        )
+
+        print(f"Merging: {target_table}")
+
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {target_table} (
+                engine_sn STRING NOT NULL,
+                pn STRING,
+                reset_date DATE,
+                tshsi INT,
+                hsr_target INT,
+                tshsr_remaining INT,
+                currently_installed BOOLEAN,
+                installed_ac STRING,
+                on_wing_periods INT,
+                hrs_per_day DOUBLE,
+                cycles_per_day DOUBLE,
+                util_window_days INT,
+                min_cyc_remaining INT,
+                binding_llp_pn STRING,
+                binding_llp_sn STRING,
+                as_of_date DATE,
+                computed_at TIMESTAMP,
+                CONSTRAINT pk_engine_tshsi PRIMARY KEY (engine_sn)
+            ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
+        """)
+
+        spark.sql(f"""
+            INSERT OVERWRITE TABLE {target_table} BY NAME
+            WITH rs AS (
+              -- Last HSR / soft-time reset per engine (the anchor for TSHSI).
+              SELECT sn,
+                     MAX(to_date(CAST(reset_date_key AS STRING), 'yyyyMMdd')) AS reset_d,
+                     MAX(pn) AS pn
+              FROM {inv}
+              WHERE control = 'RS-SOFT' AND pn LIKE 'CF34-8E5G%' AND sn IS NOT NULL
+              GROUP BY sn
+            ),
+            ev AS (
+              SELECT DISTINCT sn, ac,
+                CASE WHEN transaction_type='REMOVE' THEN 'END' ELSE 'START' END AS kind,
+                CAST(transaction_date AS DATE) AS d
+              FROM {txn}
+              WHERE pn LIKE 'CF34-8E5G%' AND sn IS NOT NULL AND ac IS NOT NULL
+            ),
+            ordered AS (
+              SELECT sn, ac, kind, d,
+                LEAD(d) OVER (PARTITION BY sn ORDER BY d, CASE WHEN kind='END' THEN 0 ELSE 1 END) AS next_d
+              FROM ev
+            ),
+            periods AS (
+              SELECT sn, ac AS tail, d AS s, COALESCE(next_d, DATE_ADD(CURRENT_DATE(), 1)) AS e
+              FROM ordered WHERE kind = 'START'
+            ),
+            clipped AS (
+              -- Clip each on-wing window to begin no earlier than the HSR reset.
+              SELECT p.sn, p.tail, GREATEST(p.s, rs.reset_d) AS s, p.e
+              FROM periods p JOIN rs ON rs.sn = p.sn
+              WHERE p.e > rs.reset_d
+            ),
+            per_period AS (
+              SELECT c.sn,
+                MAX(f.total_ac_flight_hours) - MIN(f.total_ac_flight_hours) AS hrs
+              FROM clipped c
+              JOIN {flt} f ON f.ac = c.tail AND f.void <> 'Y'
+                         AND f.flight_date >= c.s AND f.flight_date < c.e
+              GROUP BY c.sn, c.tail, c.s, c.e
+            ),
+            recon AS (
+              SELECT sn,
+                     CAST(ROUND(SUM(hrs)) AS INT) AS tshsi,
+                     CAST(COUNT(*) AS INT) AS on_wing_periods
+              FROM per_period GROUP BY sn
+            ),
+            last_ev AS (
+              SELECT sn, ac, kind,
+                ROW_NUMBER() OVER (
+                  PARTITION BY sn
+                  ORDER BY d DESC, CASE WHEN kind='END' THEN 0 ELSE 1 END DESC
+                ) AS rn
+              FROM ev
+            ),
+            cur AS (
+              SELECT sn, ac AS installed_ac, kind FROM last_ev WHERE rn = 1
+            ),
+            -- Trailing-90-day utilization on each engine's CURRENT tail, used to
+            -- convert hours-to-HSR and LLP cycles-remaining into projected removal
+            -- dates (date math itself is done in the app layer so removal-order
+            -- scenarios can re-parameterize it cheaply). Off-wing engines have no
+            -- current tail, so they get NULL rates.
+            util AS (
+              SELECT c.sn,
+                     (MAX(f.total_ac_flight_hours) - MIN(f.total_ac_flight_hours)) AS win_hrs,
+                     (MAX(f.total_ac_cycles) - MIN(f.total_ac_cycles)) AS win_cyc,
+                     DATEDIFF(MAX(f.flight_date), MIN(f.flight_date)) AS win_days
+              FROM cur c
+              JOIN {flt} f ON f.ac = c.installed_ac AND f.void <> 'Y'
+                         AND f.flight_date >= DATE_SUB(CURRENT_DATE(), 90)
+              WHERE c.kind = 'START'
+              GROUP BY c.sn
+            ),
+            -- Binding LLP per engine: among all catalogued life-limited parts
+            -- anywhere under the engine, the one with the FEWEST cycles remaining
+            -- (life_limit - live CSN). LLPs hang off an intermediate '{{esn}}LLPS'
+            -- node whose nha_sn is the engine, so link lp -> grp (one hop up).
+            -- live CSN = COALESCE(part_live_times.live_tsc, control TSN max).
+            llp_limits AS (
+              SELECT * FROM VALUES {llp_values} AS t(pn, life_limit)
+            ),
+            snap_pn AS (
+              SELECT s.sn, s.nha_sn, p.pn
+              FROM {snap} s
+              JOIN {dpart} p ON s.dim_part_key = p.dim_part_key
+            ),
+            tscn AS (
+              SELECT sn, MAX(actual_cycles) AS csn
+              FROM {inv} WHERE control = 'TSN' AND sn IS NOT NULL
+              GROUP BY sn
+            ),
+            llp_ranked AS (
+              SELECT grp.nha_sn AS engine_sn,
+                     lp.pn AS binding_llp_pn,
+                     lp.sn AS binding_llp_sn,
+                     (l.life_limit - COALESCE(pl.live_tsc, tscn.csn)) AS cyc_remaining,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY grp.nha_sn
+                       ORDER BY (l.life_limit - COALESCE(pl.live_tsc, tscn.csn)) ASC NULLS LAST
+                     ) AS rn
+              FROM snap_pn lp
+              JOIN snap_pn grp ON lp.nha_sn = grp.sn
+              JOIN llp_limits l ON l.pn = lp.pn
+              LEFT JOIN {plt} pl ON pl.sn = lp.sn
+              LEFT JOIN tscn ON tscn.sn = lp.sn
+              WHERE grp.nha_sn IS NOT NULL
+            ),
+            llp AS (
+              SELECT engine_sn,
+                     CAST(ROUND(cyc_remaining) AS INT) AS min_cyc_remaining,
+                     binding_llp_pn, binding_llp_sn
+              FROM llp_ranked WHERE rn = 1
+            )
+            SELECT rs.sn AS engine_sn,
+                   rs.pn,
+                   rs.reset_d AS reset_date,
+                   COALESCE(recon.tshsi, 0) AS tshsi,
+                   15000 AS hsr_target,
+                   15000 - COALESCE(recon.tshsi, 0) AS tshsr_remaining,
+                   CASE WHEN cur.kind = 'START' THEN TRUE ELSE FALSE END AS currently_installed,
+                   CASE WHEN cur.kind = 'START' THEN cur.installed_ac ELSE NULL END AS installed_ac,
+                   COALESCE(recon.on_wing_periods, 0) AS on_wing_periods,
+                   CASE WHEN util.win_days > 0 THEN util.win_hrs / util.win_days END AS hrs_per_day,
+                   CASE WHEN util.win_days > 0 THEN util.win_cyc / util.win_days END AS cycles_per_day,
+                   util.win_days AS util_window_days,
+                   llp.min_cyc_remaining,
+                   llp.binding_llp_pn,
+                   llp.binding_llp_sn,
+                   CURRENT_DATE() AS as_of_date,
+                   CURRENT_TIMESTAMP() AS computed_at
+            FROM rs
+            LEFT JOIN recon ON rs.sn = recon.sn
+            LEFT JOIN cur ON rs.sn = cur.sn
+            LEFT JOIN util ON rs.sn = util.sn
+            LEFT JOIN llp ON rs.sn = llp.engine_sn
+        """)
+
+        count = spark.table(target_table).count()
+        print(f"  OK engine_tshsi: {count} rows")
+        return count
+    except Exception as e:
+        print(f"  ERROR merge_engine_tshsi: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return 0
+
+# COMMAND ----------
+
 def merge_part_live_tso():
     """Reconstruct LIVE part TSO (Time Since Overhaul) from bronze prod flight log +
     component transaction history. The ERP's actual_hours (TSO) is frozen at the time
@@ -1293,6 +1519,165 @@ def merge_part_live_tso():
         return count
     except Exception as e:
         print(f"  ERROR merge_part_live_tso: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return 0
+
+# COMMAND ----------
+
+def merge_part_live_times():
+    """Reconstruct LIVE per-part TSN/TSC (Time Since New / cycles) for EVERY
+    serialized component.
+
+    TSN/TSC are ACCUMULATING counters that TRAX freezes at the part's most-recent
+    shop/install transaction (qx_ppmtx_gold_fact_inventory_control, control='TSN');
+    they do NOT advance with flight hours flown since. So — mirroring
+    merge_part_live_tso — the live value is the frozen inventory_control TSN
+    baseline PLUS the airframe flight-hour/cycle delta accrued since the part's
+    most-recent install, and only while the part is currently on-wing (last
+    transaction = install). Off-wing parts (last transaction = remove) are not
+    accumulating, so live = baseline.
+
+    The previous implementation SUMMED every historical on-wing period and omitted
+    the frozen baseline entirely. Whenever a component's transaction history was
+    incomplete (the common case — only the latest install is recorded,
+    on_wing_periods = 1) this dropped the part's whole pre-install life and badly
+    undercounted. Validated against TRAX: UNLBE666 now returns baseline 14244 +
+    5972 since-install = 20216 TSN / 14173 TSC (ERP: 20219 / 14174), vs. the old
+    5965 / 4815.
+
+    For sub-components TRAX leaves with NO TSN baseline (actual_hours 0 / no row —
+    the original motivation for this table), there is nothing to seed, so we fall
+    back to the full on-wing-period sum to retain a best-effort total-since-new.
+
+    See n_archibald_ppmtx_dab/skills/trax-live-times-reconstruction.
+    Full-refresh via INSERT OVERWRITE to preserve PRIMARY KEY + CDF for Lakebase
+    synced table qx_ppmtx_synced_gold_part_live_times."""
+    try:
+        target_table = get_gold_table("qx_ppmtx_gold_part_live_times")
+        inv = get_gold_table("qx_ppmtx_gold_fact_inventory_control")
+        txn = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_pn_transaction_history"
+        flt = f"{bronze_catalog}.{bronze_schema}.qx_trax_ac_actual_flights"
+
+        print(f"Merging: {target_table}")
+
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {target_table} (
+                sn STRING NOT NULL,
+                pn STRING,
+                live_tsn INT,
+                live_tsc INT,
+                on_wing_periods INT,
+                as_of_date DATE,
+                computed_at TIMESTAMP,
+                CONSTRAINT pk_part_live_times PRIMARY KEY (sn)
+            ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
+        """)
+
+        spark.sql(f"""
+            INSERT OVERWRITE TABLE {target_table}
+            WITH inv_baseline AS (
+              -- Frozen TSN/TSC counter baseline per serial (control='TSN' carries
+              -- both hours and cycles). SN is not unique across PNs, so collapse to
+              -- the greatest accumulated baseline for the serial.
+              SELECT sn,
+                     MAX(actual_hours)  AS baseline_tsn,
+                     MAX(actual_cycles) AS baseline_tsc,
+                     MAX(pn)            AS pn
+              FROM {inv}
+              WHERE control = 'TSN' AND sn IS NOT NULL
+              GROUP BY sn
+            ),
+            base_ev AS (
+              SELECT DISTINCT sn, pn, ac,
+                CASE WHEN transaction_type='REMOVE' THEN 'END' ELSE 'START' END AS kind,
+                CAST(transaction_date AS DATE) AS d,
+                transaction_date AS ts
+              FROM {txn}
+              WHERE sn IS NOT NULL AND ac IS NOT NULL
+            ),
+            last_event AS (
+              -- The single most-recent transaction decides whether the part is
+              -- currently on-wing (INSTALL) or off-wing (REMOVE).
+              SELECT sn, pn, ac, kind, d,
+                ROW_NUMBER() OVER (PARTITION BY sn ORDER BY ts DESC) AS rn
+              FROM base_ev
+            ),
+            current_state AS (
+              SELECT sn, pn, ac, kind, d AS event_date
+              FROM last_event WHERE rn = 1
+            ),
+            since_last_install AS (
+              -- Airframe flight-hour/cycle delta from the most-recent install to
+              -- today, only for parts whose last event was an install (on-wing).
+              SELECT cs.sn,
+                CAST(ROUND(COALESCE(MAX(f.total_ac_flight_hours) - MIN(f.total_ac_flight_hours), 0)) AS INT) AS hrs_since_install,
+                CAST(ROUND(COALESCE(MAX(f.total_ac_cycles)       - MIN(f.total_ac_cycles),       0)) AS INT) AS cyc_since_install
+              FROM current_state cs
+              JOIN {flt} f ON f.ac = cs.ac AND f.void <> 'Y' AND f.flight_date >= cs.event_date
+              WHERE cs.kind = 'START'
+              GROUP BY cs.sn
+            ),
+            ordered AS (
+              SELECT sn, pn, ac, kind, d,
+                LEAD(d) OVER (PARTITION BY sn ORDER BY d, CASE WHEN kind='END' THEN 0 ELSE 1 END) AS next_d
+              FROM base_ev
+            ),
+            periods AS (
+              SELECT sn, pn, ac AS tail, d AS s, COALESCE(next_d, DATE_ADD(CURRENT_DATE(), 1)) AS e
+              FROM ordered WHERE kind = 'START'
+            ),
+            per_period AS (
+              SELECT p.sn,
+                MAX(f.total_ac_flight_hours) - MIN(f.total_ac_flight_hours) AS hrs,
+                MAX(f.total_ac_cycles)       - MIN(f.total_ac_cycles)       AS cyc
+              FROM periods p
+              JOIN {flt} f ON f.ac = p.tail AND f.void <> 'Y'
+                         AND f.flight_date >= p.s AND f.flight_date < p.e
+              GROUP BY p.sn, p.tail, p.s, p.e
+            ),
+            full_hist AS (
+              -- Fallback total-since-new (full on-wing-period sum) for parts with
+              -- no inventory_control TSN baseline to seed from.
+              SELECT sn,
+                     CAST(ROUND(SUM(hrs)) AS INT) AS full_tsn,
+                     CAST(ROUND(SUM(cyc)) AS INT) AS full_tsc,
+                     CAST(COUNT(*) AS INT)        AS periods_count
+              FROM per_period GROUP BY sn
+            ),
+            base AS (
+              SELECT sn FROM inv_baseline
+              UNION
+              SELECT sn FROM full_hist
+            )
+            SELECT b.sn,
+                   COALESCE(ib.pn, cs.pn, fh_pn.pn) AS pn,
+                   CASE
+                     WHEN ib.baseline_tsn IS NOT NULL AND ib.baseline_tsn > 0
+                       THEN ib.baseline_tsn + COALESCE(sli.hrs_since_install, 0)
+                     ELSE COALESCE(fh.full_tsn, 0)
+                   END AS live_tsn,
+                   CASE
+                     WHEN ib.baseline_tsc IS NOT NULL AND ib.baseline_tsc > 0
+                       THEN ib.baseline_tsc + COALESCE(sli.cyc_since_install, 0)
+                     ELSE COALESCE(fh.full_tsc, 0)
+                   END AS live_tsc,
+                   COALESCE(fh.periods_count, CASE WHEN cs.kind = 'START' THEN 1 ELSE 0 END) AS on_wing_periods,
+                   CURRENT_DATE() AS as_of_date,
+                   CURRENT_TIMESTAMP() AS computed_at
+            FROM base b
+            LEFT JOIN inv_baseline ib ON b.sn = ib.sn
+            LEFT JOIN current_state cs ON b.sn = cs.sn
+            LEFT JOIN since_last_install sli ON b.sn = sli.sn
+            LEFT JOIN full_hist fh ON b.sn = fh.sn
+            LEFT JOIN current_state fh_pn ON b.sn = fh_pn.sn
+        """)
+
+        count = spark.table(target_table).count()
+        print(f"  OK part_live_times: {count} rows")
+        return count
+    except Exception as e:
+        print(f"  ERROR merge_part_live_times: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
         return 0
@@ -1590,7 +1975,9 @@ results["fact_inventory_transaction"] = merge_fact_inventory_transaction()
 results["fact_inventory_snapshot"] = merge_fact_inventory_snapshot()
 results["fact_inventory_control"] = merge_fact_inventory_control()
 results["engine_live_times"] = merge_engine_live_times()
+results["engine_tshsi"] = merge_engine_tshsi()
 results["part_live_tso"] = merge_part_live_tso()
+results["part_live_times"] = merge_part_live_times()
 results["fact_order"] = merge_fact_order()
 results["fact_teardown"] = merge_fact_teardown()
 results["fact_engineering_order"] = merge_fact_engineering_order()

@@ -19,11 +19,30 @@ from pathlib import Path
 
 dbutils.widgets.text("catalog", "subject_maintenanceengineering", "Catalog")
 dbutils.widgets.text("schema", "an_maintenanceengineering_ods", "Schema")
+# Safety switch: routine runs must NOT recreate existing tables, because
+# `CREATE OR REPLACE TABLE` assigns a new Delta table UUID, which permanently
+# breaks every Lakebase synced-table pipeline reading that table (their CDF
+# checkpoints point at the old UUID and fail with
+# DIFFERENT_DELTA_TABLE_READ_BY_STREAMING_SOURCE forever, silently, since
+# refresh_synced_tables.py doesn't surface sync failures on its own).
+# Only set this to "true" for a deliberate, one-off full schema rebuild, and
+# expect to have to full-refresh every affected sync pipeline afterward.
+dbutils.widgets.dropdown("force_recreate", "false", ["false", "true"], "Force recreate tables")
 
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
+force_recreate = dbutils.widgets.get("force_recreate").strip().lower() == "true"
 
 print(f"Target: {catalog}.{schema}")
+if force_recreate:
+    print(
+        "[WARNING] force_recreate=true — existing tables will be dropped and "
+        "recreated (CREATE OR REPLACE TABLE). This WILL break every Lakebase "
+        "synced-table pipeline reading these tables; full-refresh them afterward."
+    )
+else:
+    print("[SAFE MODE] force_recreate=false — existing tables are left untouched "
+          "(CREATE TABLE IF NOT EXISTS); only missing tables are created.")
 
 # COMMAND ----------
 
@@ -97,8 +116,13 @@ schemas = load_all_yaml_schemas(yaml_base)
 
 # COMMAND ----------
 
-def build_create_table_ddl(schema_def, catalog, schema):
-    """Generate CREATE OR REPLACE TABLE DDL from YAML schema definition."""
+def build_create_table_ddl(schema_def, catalog, schema, force_recreate=False):
+    """Generate CREATE TABLE DDL from YAML schema definition.
+
+    Defaults to `CREATE TABLE IF NOT EXISTS` so re-running setup never disturbs
+    an existing table's Delta UUID (which would break Lakebase sync checkpoints).
+    Pass force_recreate=True to intentionally rebuild via CREATE OR REPLACE TABLE.
+    """
     table_name = schema_def["table_name"]
     full_name = f"{catalog}.{schema}.{table_name}"
     columns = schema_def["columns"]
@@ -127,7 +151,8 @@ def build_create_table_ddl(schema_def, catalog, schema):
     # Escape description for SQL
     description_sql = description.replace("'", "\\'")
 
-    ddl = f"""CREATE OR REPLACE TABLE {full_name} (
+    create_clause = "CREATE OR REPLACE TABLE" if force_recreate else "CREATE TABLE IF NOT EXISTS"
+    ddl = f"""{create_clause} {full_name} (
 {columns_sql}
 )
 USING DELTA
@@ -170,7 +195,7 @@ errors = []
 
 for table_name, schema_def in {**dim_schemas, **fact_schemas, **bridge_schemas}.items():
     try:
-        ddl, full_name = build_create_table_ddl(schema_def, catalog, schema)
+        ddl, full_name = build_create_table_ddl(schema_def, catalog, schema, force_recreate=force_recreate)
         spark.sql(ddl)
         created_tables.append(full_name)
         print(f"✓ Created: {full_name}")
@@ -300,6 +325,38 @@ try:
             as_of_date DATE,
             computed_at TIMESTAMP,
             CONSTRAINT pk_part_live_tso PRIMARY KEY (sn, pn)
+        ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
+    """)
+    print(f"[OK] Created: {target_table}")
+except Exception as e:
+    print(f"[WARN] {target_table}: {e}")
+
+# COMMAND ----------
+
+# Create engine_tshsi table (live reconstruction of Time Since HSR for the Engine
+# Removal Plan — anchored on the RS-SOFT soft-time reset).
+target_table = f"{catalog}.{schema}.qx_ppmtx_gold_engine_tshsi"
+try:
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {target_table} (
+            engine_sn STRING NOT NULL,
+            pn STRING,
+            reset_date DATE,
+            tshsi INT,
+            hsr_target INT,
+            tshsr_remaining INT,
+            currently_installed BOOLEAN,
+            installed_ac STRING,
+            on_wing_periods INT,
+            hrs_per_day DOUBLE,
+            cycles_per_day DOUBLE,
+            util_window_days INT,
+            min_cyc_remaining INT,
+            binding_llp_pn STRING,
+            binding_llp_sn STRING,
+            as_of_date DATE,
+            computed_at TIMESTAMP,
+            CONSTRAINT pk_engine_tshsi PRIMARY KEY (engine_sn)
         ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
     """)
     print(f"[OK] Created: {target_table}")

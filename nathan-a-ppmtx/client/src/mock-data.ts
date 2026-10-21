@@ -62,6 +62,28 @@ export interface EngineConfig {
   [key: string]: unknown;
 }
 
+// Engine Removal Plan — HSR Data row (live Time Since HSR + projected removal).
+export interface HsrEngine {
+  engineSN: string;
+  pn: string;
+  resetDate: string;
+  tshsi: number;
+  hsrTarget: number;
+  tshsrRemaining: number;
+  currentlyInstalled: boolean;
+  installedAC: string;
+  position: string;
+  onWingPeriods: number;
+  hrsPerDay: number | null;
+  cyclesPerDay: number | null;
+  utilWindowDays: number | null;
+  minCyclesRemaining: number | null;
+  bindingLlpPN: string;
+  bindingLlpSN: string;
+  asOfDate: string;
+  [key: string]: unknown;
+}
+
 export interface APUConfig {
   apuSN: string;
   tail: string;
@@ -169,17 +191,17 @@ export const DEFECTS_BY_ATA: Array<{ ata: string; description: string; count: nu
   { ata: "79-31", description: "Engine Oil Indication", count: 1, delayMinutes: 55, cancels: 0 },
 ];
 
-export const WEEKLY_DEFECT_TREND: Array<{ week: string; count: number; [key: string]: unknown }> = [
-  { week: "2026-04-05", count: 4 },
-  { week: "2026-04-12", count: 6 },
-  { week: "2026-04-19", count: 3 },
-  { week: "2026-04-26", count: 5 },
-  { week: "2026-05-03", count: 7 },
-  { week: "2026-05-10", count: 4 },
-  { week: "2026-05-17", count: 8 },
-  { week: "2026-05-24", count: 6 },
-  { week: "2026-05-31", count: 5 },
-  { week: "2026-06-07", count: 9 },
+export const WEEKLY_DEFECT_TREND: Array<{ week: string; count: number; delayMinutes?: number; [key: string]: unknown }> = [
+  { week: "2026-04-05", count: 4, delayMinutes: 30 },
+  { week: "2026-04-12", count: 6, delayMinutes: 55 },
+  { week: "2026-04-19", count: 3, delayMinutes: 12 },
+  { week: "2026-04-26", count: 5, delayMinutes: 40 },
+  { week: "2026-05-03", count: 7, delayMinutes: 65 },
+  { week: "2026-05-10", count: 4, delayMinutes: 20 },
+  { week: "2026-05-17", count: 8, delayMinutes: 80 },
+  { week: "2026-05-24", count: 6, delayMinutes: 35 },
+  { week: "2026-05-31", count: 5, delayMinutes: 25 },
+  { week: "2026-06-07", count: 9, delayMinutes: 70 },
 ];
 
 export const IMPACT_BY_PN: Array<{ partNumber: string; description: string; delayMinutes: number; cancels: number; removals: number; [key: string]: unknown }> = [
@@ -265,7 +287,7 @@ export const CRITICAL_SPARE_PARTS: CriticalSparePart[] = [
   { name: "FADEC", partNumbers: [{ pn: "4120T00P60", quantity: 2 }, { pn: "4120T00P63", quantity: 1 }] },
   { name: "FMU", partNumbers: [{ pn: "4120T01P02", quantity: 3 }] },
   { name: "SEAL PRV", partNumbers: [{ pn: "421645-2", quantity: 5 }] },
-  { name: "ENG FUEL PUMP", partNumbers: [{ pn: "829500-7", quantity: 1 }, { pn: "829500-9", quantity: 2 }] },
+  { name: "ENG FUEL PUMP", partNumbers: [{ pn: "829500-7", quantity: 1 }, { pn: "829500-9", quantity: 2 }, { pn: "4120T04P09", quantity: 0 }] },
   { name: "ENG OBV", partNumbers: [{ pn: "5080046-103", quantity: 4 }] },
   { name: "ENG ATS", partNumbers: [{ pn: "4120T06P10", quantity: 2 }] },
   { name: "APU ANTI-SURGE VALVE", partNumbers: [{ pn: "4954226", quantity: 1 }] },

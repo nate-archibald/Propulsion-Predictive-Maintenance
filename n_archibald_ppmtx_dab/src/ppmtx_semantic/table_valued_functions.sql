@@ -235,10 +235,10 @@ RETURN
     c.section,
     c.chapter_description,
     COUNT(*) AS defect_count,
-    COUNT(CASE WHEN f.delay = 'Y' THEN 1 END) AS delay_defect_count,
-    COUNT(CASE WHEN f.cancellation = 'Y' THEN 1 END) AS cancel_defect_count,
+    COUNT(CASE WHEN f.delay IS NOT NULL AND TRIM(f.delay) <> '' AND UPPER(TRIM(f.delay)) <> 'N' THEN 1 END) AS delay_defect_count,
+    COUNT(CASE WHEN f.cancellation IS NOT NULL AND TRIM(f.cancellation) <> '' AND UPPER(TRIM(f.cancellation)) <> 'N' THEN 1 END) AS cancel_defect_count,
     SUM(COALESCE(f.delay_minutes, 0)) AS total_delay_minutes,
-    COUNT(CASE WHEN f.i_f_s_d = 'Y' THEN 1 END) AS ifsd_count
+    COUNT(CASE WHEN f.i_f_s_d IS NOT NULL AND TRIM(f.i_f_s_d) <> '' AND UPPER(TRIM(f.i_f_s_d)) <> 'N' THEN 1 END) AS ifsd_count
   FROM ${catalog}.${gold_schema}.vw_prop_fact_defect f
   LEFT JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
   LEFT JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date d ON f.reported_date_key = d.dim_date_key
@@ -295,12 +295,12 @@ RETURN
         ELSE 'All Propulsion'
       END AS group_description,
       COUNT(*) AS total_defects,
-      COUNT(CASE WHEN f.delay = 'Y' THEN 1 END) AS delay_events,
-      COUNT(CASE WHEN f.cancellation = 'Y' THEN 1 END) AS cancel_events,
+      COUNT(CASE WHEN f.delay IS NOT NULL AND TRIM(f.delay) <> '' AND UPPER(TRIM(f.delay)) <> 'N' THEN 1 END) AS delay_events,
+      COUNT(CASE WHEN f.cancellation IS NOT NULL AND TRIM(f.cancellation) <> '' AND UPPER(TRIM(f.cancellation)) <> 'N' THEN 1 END) AS cancel_events,
       SUM(COALESCE(f.delay_minutes, 0)) AS total_delay_minutes,
       SUM(COALESCE(f.delays_hours, 0)) AS total_delay_hours,
-      COUNT(CASE WHEN f.i_f_s_d = 'Y' THEN 1 END) AS ifsd_events,
-      COUNT(CASE WHEN f.mel = 'Y' THEN 1 END) AS mel_deferrals
+      COUNT(CASE WHEN f.i_f_s_d IS NOT NULL AND TRIM(f.i_f_s_d) <> '' AND UPPER(TRIM(f.i_f_s_d)) <> 'N' THEN 1 END) AS ifsd_events,
+      COUNT(CASE WHEN f.mel IS NOT NULL AND TRIM(f.mel) <> '' AND UPPER(TRIM(f.mel)) <> 'N' THEN 1 END) AS mel_deferrals
     FROM ${catalog}.${gold_schema}.vw_prop_fact_defect f
     LEFT JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter c ON f.dim_ata_chapter_key = c.dim_ata_chapter_key
     LEFT JOIN ${catalog}.${gold_schema}.qx_ppmtx_gold_dim_aircraft a ON f.dim_aircraft_key = a.dim_aircraft_key

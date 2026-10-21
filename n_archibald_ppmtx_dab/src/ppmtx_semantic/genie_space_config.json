@@ -1,142 +1,901 @@
 {
-  "_WARNING": "LOCAL FILE IS STALE — benchmark questions, instructions, and sample questions were updated directly in Databricks (July 2026). Do NOT re-deploy from this file without first reconciling with live spaces: Propulsion Reliability (01f1763c5f6c1b2789524816da865544), Inventory & Supply Chain (01f1763c5fae192d844fb99df96a6a24). The Genie API does not expose serialized_space on GET, so manual export is required.",
+  "_SOURCE": "Synced from live Databricks Genie Spaces via GET ?include_serialized_space=true. Identifiers templatized: ${catalog}=subject_maintenanceengineering_test, ${gold_schema}=an_maintenanceengineering_ods, ${warehouse_id}=600d6ad41356867b. live_space_id on each space records the deployed space for idempotent PATCH.",
   "version": 2,
   "spaces": [
     {
       "title": "Propulsion Reliability Intelligence",
-      "description": "Natural language analytics for Horizon Air E175 propulsion component lifecycle, reliability, and defect intelligence. Covers MTBUR analysis, removal trending, defect hotspot detection, operational impact tracking (delays, cancellations, IFSDs), and defect-to-part tracing.",
+      "description": "Natural language analytics for Horizon Air E175 propulsion component lifecycle, reliability, and defect intelligence. Covers:\n- Pilot reports (PIREPs) and maintenance defects\n- Component removals and replacements\n- MTBUR (Mean Time Between Unscheduled Removal) analysis\n- Removal trending and defect hotspot detection\n- Operational impact tracking (delays, cancellations, IFSDs)\n- Defect-to-part tracing and root cause analysis\n- Engine performance issues (vibration, FOD, fan blade issues)",
       "warehouse_id": "${warehouse_id}",
+      "live_space_id": "01f1763c5f6c1b2789524816da865544",
       "data_sources": {
         "tables": [
-          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part"},
-          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_aircraft"},
-          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_ata_chapter"},
-          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date"},
-          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_component_removal"},
-          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_defect"},
-          {"identifier": "${catalog}.${gold_schema}.vw_prop_bridge_defect_part"}
-        ],
-        "metric_views": [
-          {"identifier": "${catalog}.${gold_schema}.component_lifecycle_analytics_metrics"},
-          {"identifier": "${catalog}.${gold_schema}.defect_intelligence_analytics_metrics"}
-        ]
-      },
-      "config": {
-        "sample_questions": [
-          {"id": "sq01", "question": ["What are the top 5 ATA sections by defect volume this month?"]},
-          {"id": "sq02", "question": ["Show MTBUR for all HPT parts over the last 24 months"]},
-          {"id": "sq03", "question": ["Which tails have the most unscheduled removals in Q2?"]},
-          {"id": "sq04", "question": ["Trace all parts linked to defect 12345"]},
-          {"id": "sq05", "question": ["What is the delay impact trend for ATA 73 week over week?"]}
+          {
+            "identifier": "${catalog}.${gold_schema}.inventory_spares_analytics_metrics"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.mv_prop_defect_metrics"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.mv_prop_inventory_control_metrics"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.mv_prop_inventory_snapshot_metrics"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.mv_prop_inventory_transaction_metrics"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.mv_prop_order_metrics"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.mv_prop_removal_metrics"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_ac_pn_transaction_history",
+            "description": [
+              "Raw part transactions. transaction_type='REMOVE' for removals, 'INSTALL' for installations. Filter by transaction_type when user asks about removals or installations."
+            ]
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_bridge_part_interchangeable",
+            "column_configs": [
+              {
+                "column_name": "bridge_part_interchangeable_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "dim_part_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "dim_part_key_interchangeable",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "interchange_class",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "interchangeable_type",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "manufacturer",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "modified_date",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "pn",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "pn_interchangeable",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "prefer",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "source_status",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "vendor",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              }
+            ]
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_engine_live_times",
+            "column_configs": [
+              {
+                "column_name": "as_of_date",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "computed_at",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "engine_sn",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "live_tsc",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "live_tsn",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "on_wing_periods",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "pn",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              }
+            ]
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_fact_defect_delay",
+            "column_configs": [
+              {
+                "column_name": "cancellation",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "canx",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "defect",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "defect_item",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "defect_type",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "delay_code",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "delay_date_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "delay_hour",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "delay_item",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "delay_minutes",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "delay_reason",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "delay_type",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "destination",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "dim_aircraft_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "fact_defect_delay_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "flight",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "station",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              }
+            ]
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_fact_engineering_order",
+            "column_configs": [
+              {
+                "column_name": "applicable",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "authorization",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "authorized_by",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "authorized_date_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "dim_ata_chapter_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "effective_date_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "eo",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "eo_category",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "eo_description",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "fact_engineering_order_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "issued_date_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "manditory",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "next_eo",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "repeat_number",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "revised_by",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "revised_date_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "revision",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              },
+              {
+                "column_name": "schedule_cycles",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "schedule_date_key",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "schedule_days",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "schedule_hours",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "status",
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              }
+            ]
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_part_live_tso",
+            "column_configs": [
+              {
+                "column_name": "as_of_date",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "baseline_tso_hours",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "computed_at",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "flight_hours_since_reset",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "live_tso",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "on_wing_periods",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "pn",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "reset_date",
+                "enable_format_assistance": true
+              },
+              {
+                "column_name": "sn",
+                "enable_format_assistance": true
+              }
+            ]
+          }
         ]
       },
       "instructions": {
         "text_instructions": [
-          {"id": "ti01", "content": ["You are the Propulsion Reliability Intelligence assistant for Horizon Air's E175 fleet (CF34-8E engines / APS2300 APU)."]},
-          {"id": "ti02", "content": ["ATA chapters in scope: 49 (APU), 70-80 (Power Plant series). Data is pre-filtered to propulsion only."]},
-          {"id": "ti03", "content": ["For aggregate metrics (removal counts, averages, trends), use Metric Views: component_lifecycle_analytics_metrics or defect_intelligence_analytics_metrics with MEASURE()."]},
-          {"id": "ti04", "content": ["For parameterized queries (specific P/N, date range, station, top-N), use TVFs: get_component_removal_history, get_mtbur_analysis, get_time_on_wing_distribution, get_defect_trending_by_ata, get_operational_impact_summary, get_defect_part_linkage."]},
-          {"id": "ti05", "content": ["TERMINOLOGY: 'tail'/'tail number' = ac column; 'P/N' = part number (pn); 'S/N' = serial number; 'TSI' = Time Since Install (hours_installed/cycles_installed); 'MTBUR' = Mean Time Between Unscheduled Removals."]},
-          {"id": "ti06", "content": ["TERMINOLOGY: 'IFSD' = In-Flight Shut Down (i_f_s_d='Y'); 'MEL' = Minimum Equipment List deferral (mel='Y'); 'CPA' = Capacity Purchase Agreement (delays/cancels have direct $ impact)."]},
-          {"id": "ti07", "content": ["When asked about 'removal history' or 'what was removed', use get_component_removal_history TVF."]},
-          {"id": "ti08", "content": ["When asked about 'MTBUR' or 'reliability', use get_mtbur_analysis TVF with schedule_filter='UNSCHEDULED'."]},
-          {"id": "ti09", "content": ["When asked about 'top N by delays' or 'operational impact', use get_operational_impact_summary TVF."]},
-          {"id": "ti10", "content": ["When asked to 'trace' a defect to parts or vice versa, use get_defect_part_linkage TVF."]},
-          {"id": "ti11", "content": ["Default date range: last 12 months if user does not specify. TVF date params are STRING format 'YYYY-MM-DD'."]},
-          {"id": "ti12", "content": ["ALWAYS state assumptions about date ranges, ATA scope, and filters explicitly in your response."]}
+          {
+            "id": "01f1b0c0d0e0f0a0b0c0d0e0f0a0b0c0",
+            "content": [
+              "Transaction Type Filtering: The tables qx_ppmtx_gold_fact_component_removal and qx_ppmtx_ac_pn_transaction_history have a 'transaction_type' column with values 'REMOVE' (part removed from aircraft) and 'INSTALL' (part installed on aircraft). When a user asks about 'removals', 'removal count', 'removed', 'unscheduled removals', or 'scheduled removals', ALWAYS filter WHERE transaction_type = 'REMOVE'. When a user asks about 'installations', ALWAYS filter WHERE transaction_type = 'INSTALL'. Never mix REMOVE and INSTALL records when counting one type."
+            ]
+          }
         ],
-        "sql_functions": [
-          {"id": "sf01", "identifier": "${catalog}.${gold_schema}.get_component_removal_history"},
-          {"id": "sf02", "identifier": "${catalog}.${gold_schema}.get_mtbur_analysis"},
-          {"id": "sf03", "identifier": "${catalog}.${gold_schema}.get_time_on_wing_distribution"},
-          {"id": "sf04", "identifier": "${catalog}.${gold_schema}.get_defect_trending_by_ata"},
-          {"id": "sf05", "identifier": "${catalog}.${gold_schema}.get_operational_impact_summary"},
-          {"id": "sf06", "identifier": "${catalog}.${gold_schema}.get_defect_part_linkage"}
-        ],
-        "example_question_sqls": [
-          {"id": "bq01", "question": ["How many removals this month?"], "sql": ["SELECT MEASURE(removal_count) FROM component_lifecycle_analytics_metrics WHERE removal_date >= DATE_TRUNC('MONTH', CURRENT_DATE())"]},
-          {"id": "bq02", "question": ["Average hours at removal for all parts"], "sql": ["SELECT MEASURE(avg_hours_at_removal) FROM component_lifecycle_analytics_metrics"]},
-          {"id": "bq03", "question": ["Removal trend by month for the last 12 months"], "sql": ["SELECT month_name, year, MEASURE(removal_count) FROM component_lifecycle_analytics_metrics WHERE removal_date >= ADD_MONTHS(CURRENT_DATE(), -12) GROUP BY month_name, year ORDER BY year, month"]},
-          {"id": "bq04", "question": ["Top 5 ATA chapters by defect count this quarter"], "sql": ["SELECT chapter, chapter_description, MEASURE(defect_count) AS defect_count FROM defect_intelligence_analytics_metrics WHERE reported_date >= DATE_TRUNC('QUARTER', CURRENT_DATE()) GROUP BY chapter, chapter_description ORDER BY defect_count DESC LIMIT 5"]},
-          {"id": "bq05", "question": ["Total delay hours from propulsion defects this year"], "sql": ["SELECT MEASURE(total_delay_hours) FROM defect_intelligence_analytics_metrics WHERE reported_date >= DATE_TRUNC('YEAR', CURRENT_DATE())"]},
-          {"id": "bq06", "question": ["MTBUR for all parts in the last 24 months"], "sql": ["SELECT * FROM get_mtbur_analysis(NULL, '24', 'UNSCHEDULED')"]},
-          {"id": "bq07", "question": ["Show all removals for part 337-100-305-0 in 2025"], "sql": ["SELECT * FROM get_component_removal_history('337-100-305-0', '2025-01-01', '2025-12-31', NULL)"]}
-        ]
-      },
-      "benchmarks": {
-        "questions": [
-          {"id": "bm01", "question": ["How many removals this month?"], "answer": [{"format": "SQL", "content": ["SELECT MEASURE(removal_count) FROM component_lifecycle_analytics_metrics WHERE removal_date >= DATE_TRUNC('MONTH', CURRENT_DATE())"]}]},
-          {"id": "bm02", "question": ["Average hours at removal for all parts"], "answer": [{"format": "SQL", "content": ["SELECT MEASURE(avg_hours_at_removal) FROM component_lifecycle_analytics_metrics"]}]},
-          {"id": "bm03", "question": ["Top 5 ATA chapters by defect count this quarter"], "answer": [{"format": "SQL", "content": ["SELECT chapter, chapter_description, MEASURE(defect_count) AS defect_count FROM defect_intelligence_analytics_metrics WHERE reported_date >= DATE_TRUNC('QUARTER', CURRENT_DATE()) GROUP BY chapter, chapter_description ORDER BY defect_count DESC LIMIT 5"]}]}
+        "join_specs": [
+          {
+            "id": "01f1bde1798817319855af75be9e47a3",
+            "left": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_bridge_part_interchangeable",
+              "alias": "qx_ppmtx_gold_bridge_part_interchangeable"
+            },
+            "right": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part",
+              "alias": "qx_ppmtx_gold_dim_part"
+            },
+            "sql": [
+              "`qx_ppmtx_gold_bridge_part_interchangeable`.`dim_part_key_interchangeable` = `qx_ppmtx_gold_dim_part`.`dim_part_key`",
+              "--rt=FROM_RELATIONSHIP_TYPE_MANY_TO_ONE--"
+            ]
+          },
+          {
+            "id": "01f1bde179881b00b4d583575feb4cf3",
+            "left": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_bridge_part_interchangeable",
+              "alias": "qx_ppmtx_gold_bridge_part_interchangeable"
+            },
+            "right": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part",
+              "alias": "qx_ppmtx_gold_dim_part_2"
+            },
+            "sql": [
+              "`qx_ppmtx_gold_bridge_part_interchangeable`.`dim_part_key` = `qx_ppmtx_gold_dim_part_2`.`dim_part_key`",
+              "--rt=FROM_RELATIONSHIP_TYPE_MANY_TO_ONE--"
+            ]
+          },
+          {
+            "id": "01f1bde17989104c8e8d07161b65f6df",
+            "left": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_fact_defect_delay",
+              "alias": "qx_ppmtx_gold_fact_defect_delay"
+            },
+            "right": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date",
+              "alias": "qx_ppmtx_gold_dim_date"
+            },
+            "sql": [
+              "`qx_ppmtx_gold_fact_defect_delay`.`delay_date_key` = `qx_ppmtx_gold_dim_date`.`dim_date_key`",
+              "--rt=FROM_RELATIONSHIP_TYPE_MANY_TO_ONE--"
+            ]
+          },
+          {
+            "id": "01f1bde17989151480f0da1843a20a0a",
+            "left": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_fact_engineering_order",
+              "alias": "qx_ppmtx_gold_fact_engineering_order"
+            },
+            "right": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date",
+              "alias": "qx_ppmtx_gold_dim_date"
+            },
+            "sql": [
+              "`qx_ppmtx_gold_fact_engineering_order`.`authorized_date_key` = `qx_ppmtx_gold_dim_date`.`dim_date_key`",
+              "--rt=FROM_RELATIONSHIP_TYPE_MANY_TO_ONE--"
+            ]
+          },
+          {
+            "id": "01f1bde17989196f8c8879c2d55bb8bf",
+            "left": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_fact_engineering_order",
+              "alias": "qx_ppmtx_gold_fact_engineering_order"
+            },
+            "right": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date",
+              "alias": "qx_ppmtx_gold_dim_date_2"
+            },
+            "sql": [
+              "`qx_ppmtx_gold_fact_engineering_order`.`schedule_date_key` = `qx_ppmtx_gold_dim_date_2`.`dim_date_key`",
+              "--rt=FROM_RELATIONSHIP_TYPE_MANY_TO_ONE--"
+            ]
+          },
+          {
+            "id": "01f1bde179891c97a9cf985366b8b1a0",
+            "left": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_fact_engineering_order",
+              "alias": "qx_ppmtx_gold_fact_engineering_order"
+            },
+            "right": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date",
+              "alias": "qx_ppmtx_gold_dim_date_3"
+            },
+            "sql": [
+              "`qx_ppmtx_gold_fact_engineering_order`.`issued_date_key` = `qx_ppmtx_gold_dim_date_3`.`dim_date_key`",
+              "--rt=FROM_RELATIONSHIP_TYPE_MANY_TO_ONE--"
+            ]
+          },
+          {
+            "id": "01f1bde179891f72b23ca03fc52666c8",
+            "left": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_fact_engineering_order",
+              "alias": "qx_ppmtx_gold_fact_engineering_order"
+            },
+            "right": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date",
+              "alias": "qx_ppmtx_gold_dim_date_4"
+            },
+            "sql": [
+              "`qx_ppmtx_gold_fact_engineering_order`.`effective_date_key` = `qx_ppmtx_gold_dim_date_4`.`dim_date_key`",
+              "--rt=FROM_RELATIONSHIP_TYPE_MANY_TO_ONE--"
+            ]
+          },
+          {
+            "id": "01f1bde1798a11d683abd7243fa46be7",
+            "left": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_fact_engineering_order",
+              "alias": "qx_ppmtx_gold_fact_engineering_order"
+            },
+            "right": {
+              "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date",
+              "alias": "qx_ppmtx_gold_dim_date_5"
+            },
+            "sql": [
+              "`qx_ppmtx_gold_fact_engineering_order`.`revised_date_key` = `qx_ppmtx_gold_dim_date_5`.`dim_date_key`",
+              "--rt=FROM_RELATIONSHIP_TYPE_MANY_TO_ONE--"
+            ]
+          }
         ]
       }
     },
     {
       "title": "Inventory & Supply Chain Intelligence",
-      "description": "Natural language analytics for Horizon Air propulsion spare parts inventory, LLP life-limit tracking, procurement orders, and shop findings. Covers spare positioning, stock-out risk, movement velocity, order fulfillment, and teardown root cause analysis.",
+      "description": "Natural language analytics for Horizon Air E175 propulsion spare parts inventory, LLP life-limit tracking, procurement, and shop findings. Covers:\n- Spare parts positioning and availability\n- Stock-out risk analysis and movement velocity\n- LLP (Life Limited Parts) tracking and life-limit monitoring\n- Procurement order status and fulfillment\n- Shop visit findings and teardown root cause analysis\n- Parts consumption trending\n- Inventory optimization recommendations\n\nBest for: \"Do we have spare exciters?\", \"LLP status for tail XXXQX\", \"Shop findings for removed parts\"",
       "warehouse_id": "${warehouse_id}",
+      "live_space_id": "01f1763c5fae192d844fb99df96a6a24",
       "data_sources": {
         "tables": [
-          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part"},
-          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_station"},
-          {"identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date"},
-          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_inventory_snapshot"},
-          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_inventory_transaction"},
-          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_inventory_control"},
-          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_order"},
-          {"identifier": "${catalog}.${gold_schema}.vw_prop_fact_teardown"}
-        ],
-        "metric_views": [
-          {"identifier": "${catalog}.${gold_schema}.inventory_spares_analytics_metrics"},
-          {"identifier": "${catalog}.${gold_schema}.procurement_overhaul_analytics_metrics"}
+          {
+            "identifier": "${catalog}.${gold_schema}.inventory_spares_analytics_metrics",
+            "column_configs": [
+              {
+                "column_name": "condition",
+                "description": [
+                  "Part condition code. USABLE: SV=Serviceable, OH=Overhauled (good for use), INSPTEST=Inspected & Tested (good for use), NEW=New. NOT USABLE: U/S=Unserviceable, BADSTOCK=Rejected, REPAIR=Under repair. UNDER EVALUATION: BENCHCK=Bench check, AR=As Received. OTHER: ORIG, SOS, MOD. For usable spare queries filter: condition IN ('SV', 'OH', 'INSPTEST', 'NEW'). Do NOT use serviceable_count measure — it filters on 'SVC' which does not exist; use MEASURE(instance_count) with condition filter instead."
+                ],
+                "enable_format_assistance": true,
+                "enable_entity_matching": true
+              }
+            ]
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.procurement_overhaul_analytics_metrics"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_date"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_part"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.qx_ppmtx_gold_dim_station"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.vw_prop_fact_inventory_control"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.vw_prop_fact_inventory_snapshot",
+            "column_configs": [
+              {
+                "column_name": "condition",
+                "description": [
+                  "Part condition code indicating current serviceability. USABLE (good for installation): SV=Serviceable, OH=Overhauled (completed overhaul, good for use), INSPTEST=Inspected & Tested (good for use), NEW=New part. NOT USABLE: U/S=Unserviceable, BADSTOCK=Rejected/bad stock, REPAIR=Under repair. UNDER EVALUATION: BENCHCK=Bench check, AR=As Received (incoming). OTHER: ORIG=Original, SOS=Service on Station, MOD=Modified. For usable spare queries use: condition IN ('SV', 'OH', 'INSPTEST', 'NEW'). NOTE: 'SVC' does not exist in this database — use 'SV'."
+                ]
+              }
+            ]
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.vw_prop_fact_inventory_transaction"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.vw_prop_fact_order"
+          },
+          {
+            "identifier": "${catalog}.${gold_schema}.vw_prop_fact_teardown"
+          }
         ]
       },
       "config": {
         "sample_questions": [
-          {"id": "sq06", "question": ["Which LLPs have fewer than 1,000 cycles remaining fleet-wide?"]},
-          {"id": "sq07", "question": ["How many serviceable spares of P/N 337-100-305-0 are at PDX?"]},
-          {"id": "sq08", "question": ["Which parts have stock-out risk based on recent removals?"]},
-          {"id": "sq09", "question": ["Show open repair orders exceeding 30-day lead time"]},
-          {"id": "sq10", "question": ["What are the most common shop findings for ATA 73 teardowns?"]}
+          {
+            "id": "7c730b9440ef5e5db3d86ce71d944b37",
+            "question": [
+              "Which LLPs have fewer than 1,000 cycles remaining fleet-wide?"
+            ]
+          },
+          {
+            "id": "7ea172d954645977b1a8f8e26736510e",
+            "question": [
+              "How many serviceable spares of P/N 337-100-305-0 are at PDX?"
+            ]
+          },
+          {
+            "id": "7f52aec9fd7855a788adb4679a5fda30",
+            "question": [
+              "Which parts have stock-out risk based on recent removals?"
+            ]
+          },
+          {
+            "id": "89faf536c37a5273b7337954cf65d353",
+            "question": [
+              "What are the most common shop findings for ATA 73 teardowns?"
+            ]
+          },
+          {
+            "id": "c60b5c7cee7e5679879557e82a2f946b",
+            "question": [
+              "Show open repair orders exceeding 30-day lead time"
+            ]
+          }
         ]
       },
       "instructions": {
         "text_instructions": [
-          {"id": "ti13", "content": ["You are the Inventory & Supply Chain Intelligence assistant for Horizon Air's propulsion spare parts program."]},
-          {"id": "ti14", "content": ["Parts scope: Propulsion components for CF34-8E engines and APS2300 APU. Data is pre-filtered to propulsion parts only."]},
-          {"id": "ti15", "content": ["For aggregate metrics (counts, values, rates), use Metric Views: inventory_spares_analytics_metrics or procurement_overhaul_analytics_metrics with MEASURE()."]},
-          {"id": "ti16", "content": ["For parameterized queries (specific P/N, station, threshold), use TVFs: get_spare_availability_by_station, get_llp_redline_status, get_inventory_movement_velocity, get_order_status_summary, get_shop_findings_by_part."]},
-          {"id": "ti17", "content": ["CONDITIONS: SVC=Serviceable, UNS=Unserviceable, SCR=Scrapped, AOG=Aircraft on Ground, RFI=Ready for Install."]},
-          {"id": "ti18", "content": ["LLP=Life Limited Part (hard cycle/hour/day limit). Red-line=approaching a control limit. Use get_llp_redline_status TVF for threshold queries."]},
-          {"id": "ti19", "content": ["ORDER TYPES: Purchase, Repair, Exchange, Loan. FULFILLMENT RATE = qty_received / qty_require."]},
-          {"id": "ti20", "content": ["NFF=No Fault Found (teardown result). Shop Finding=root cause from component teardown inspection."]},
-          {"id": "ti21", "content": ["Stock-out risk = P/N with < 2 serviceable spares AND high removal velocity. Combine get_spare_availability_by_station with get_inventory_movement_velocity for this analysis."]},
-          {"id": "ti22", "content": ["When asked about 'spares at station' or 'inventory by condition', use get_spare_availability_by_station TVF."]},
-          {"id": "ti23", "content": ["When asked about 'LLP' or 'remaining cycles/hours' or 'due soon', use get_llp_redline_status TVF."]},
-          {"id": "ti24", "content": ["Default thresholds if not specified: remaining_cycles=1000, remaining_hours=2000. TVF params are STRING type."]}
-        ],
-        "sql_functions": [
-          {"id": "sf07", "identifier": "${catalog}.${gold_schema}.get_spare_availability_by_station"},
-          {"id": "sf08", "identifier": "${catalog}.${gold_schema}.get_llp_redline_status"},
-          {"id": "sf09", "identifier": "${catalog}.${gold_schema}.get_inventory_movement_velocity"},
-          {"id": "sf10", "identifier": "${catalog}.${gold_schema}.get_order_status_summary"},
-          {"id": "sf11", "identifier": "${catalog}.${gold_schema}.get_shop_findings_by_part"}
+          {
+            "id": "13a7e51798325612888e84bc07606469",
+            "content": [
+              "You are the Inventory & Supply Chain Intelligence assistant for Horizon Air's propulsion spare parts program.\n",
+              "Parts scope: Propulsion components for CF34-8E engines and APS2300 APU. Data is pre-filtered to propulsion parts only.\n",
+              "For aggregate metrics (counts, values, rates), use Metric Views: inventory_spares_analytics_metrics or procurement_overhaul_analytics_metrics with MEASURE().\n",
+              "For parameterized queries (specific P/N, station, threshold), use TVFs: get_spare_availability_by_station, get_llp_redline_status, get_inventory_movement_velocity, get_order_status_summary, get_shop_findings_by_part.\n",
+              "\n",
+              "CONDITION CODES (actual values stored in the database):\n",
+              "  USABLE for installation: SV=Serviceable, OH=Overhauled (good for use — completed overhaul), INSPTEST=Inspected & Tested (good for use), NEW=New part (good for use)\n",
+              "  NOT usable: U/S=Unserviceable, BADSTOCK=Rejected/bad stock, REPAIR=Under repair (not currently available)\n",
+              "  Under evaluation: BENCHCK=Bench check (being evaluated), AR=As Received (incoming, condition unknown)\n",
+              "  Other: ORIG=Original condition, SOS=Service on Station, MOD=Modified\n",
+              "\n",
+              "USABLE SPARES RULE: A part is a usable spare when condition IN ('SV', 'OH', 'INSPTEST', 'NEW'). Always apply this filter when the user asks about 'available', 'usable', 'serviceable', 'spare', or 'ready for installation' parts. NEVER filter on condition = 'SVC' — that code does not exist in this database; the correct code is 'SV'.\n",
+              "\n",
+              "METRIC VIEW WARNING: The serviceable_count measure in inventory_spares_analytics_metrics uses condition = 'SVC' which does not exist in this data. Use MEASURE(instance_count) with a condition IN ('SV', 'OH', 'INSPTEST', 'NEW') filter instead of MEASURE(serviceable_count) for accurate usable spare counts.\n",
+              "\n",
+              "LLP=Life Limited Part (hard cycle/hour/day limit). Red-line=approaching a control limit. Use get_llp_redline_status TVF for threshold queries.\n",
+              "ORDER TYPES: Purchase (PO), Repair (RN), Exchange (EX), Loan (LO), Service (SV), Transfer (TO/TS), Work Completion (WC). FULFILLMENT RATE = qty_received / qty_require.\n",
+              "NFF=No Fault Found (teardown result). Shop Finding=root cause from component teardown inspection.\n",
+              "Stock-out risk = P/N with < 2 usable spares AND high removal velocity. Combine get_spare_availability_by_station with get_inventory_movement_velocity for this analysis.\n",
+              "When asked about 'spares at station' or 'inventory by condition', use get_spare_availability_by_station TVF. Pass actual condition codes (e.g., 'SV' for serviceable — not 'SVC').\n",
+              "When asked about 'LLP' or 'remaining cycles/hours' or 'due soon', use get_llp_redline_status TVF.\n",
+              "get_llp_redline_status signature: (remaining_cycles STRING, remaining_hours STRING, part_number STRING). Pass NULL for part_number unless a specific P/N is requested. When the user only specifies a cycle limit (e.g., 'fewer than 1000 cycles'), set remaining_hours to '999999' to disable the hours filter. Example: get_llp_redline_status('1000', '999999', NULL).\n",
+              "When writing MEASURE() metric view queries, always specify GROUP BY column names explicitly (e.g., GROUP BY station_code, GROUP BY condition, GROUP BY order_type). Never use GROUP BY ALL.\n",
+              "For TOP N queries against metric views, use a simple flat query with ORDER BY MEASURE(col) DESC LIMIT N. Never wrap in a CTE with RANK() or ROW_NUMBER() for plain top-N requests.\n",
+              "When filtering a metric view to a single point in time with WHERE (e.g., WHERE year = 2026 AND month = 6), omit GROUP BY — MEASURE() will aggregate across all matching rows without it. Only add GROUP BY when you need multiple groups in the result."
+            ]
+          }
         ],
         "example_question_sqls": [
-          {"id": "bq13", "question": ["How many serviceable spares at PDX?"], "sql": ["SELECT station_code, MEASURE(serviceable_count) FROM inventory_spares_analytics_metrics WHERE station_code = 'PDX'"]},
-          {"id": "bq14", "question": ["Total inventory value by condition"], "sql": ["SELECT condition, MEASURE(total_value) AS value FROM inventory_spares_analytics_metrics GROUP BY condition ORDER BY value DESC"]},
-          {"id": "bq15", "question": ["LLPs with fewer than 1000 cycles remaining"], "sql": ["SELECT * FROM get_llp_redline_status('1000', '999999', NULL)"]},
-          {"id": "bq16", "question": ["Open repair orders this quarter"], "sql": ["SELECT MEASURE(open_order_count) FROM procurement_overhaul_analytics_metrics WHERE order_date >= DATE_TRUNC('QUARTER', CURRENT_DATE())"]},
-          {"id": "bq17", "question": ["Average repair cost by order type"], "sql": ["SELECT order_type, MEASURE(avg_repair_cost) AS avg_cost FROM procurement_overhaul_analytics_metrics GROUP BY order_type ORDER BY avg_cost DESC"]},
-          {"id": "bq18", "question": ["Order fulfillment rate trend by month"], "sql": ["SELECT month, year, MEASURE(fulfillment_rate) FROM procurement_overhaul_analytics_metrics GROUP BY month, year ORDER BY year, month"]},
-          {"id": "bq19", "question": ["Serviceable spares for part 337-100-305-0 at all stations"], "sql": ["SELECT * FROM get_spare_availability_by_station('337-100-305-0', NULL, 'SVC')"]}
-        ]
+          {
+            "id": "01f1795d1bc719e48db2a614ab501edb",
+            "question": [
+              "Total repair cost by order type"
+            ],
+            "sql": [
+              "SELECT order_type, MEASURE(total_repair_cost) AS total_cost FROM procurement_overhaul_analytics_metrics GROUP BY order_type ORDER BY total_cost DESC"
+            ]
+          },
+          {
+            "id": "01f1795da3af112584dc011c40350b71",
+            "question": [
+              "Inventory at a station by condition"
+            ],
+            "sql": [
+              "SELECT condition, MEASURE(instance_count) AS instance_count FROM inventory_spares_analytics_metrics WHERE station_code = 'PDX' GROUP BY condition ORDER BY instance_count DESC"
+            ]
+          },
+          {
+            "id": "01f1795da3af14eb82a1c020a843a80e",
+            "question": [
+              "Top 10 parts by inventory count"
+            ],
+            "sql": [
+              "SELECT pn, pn_description, MEASURE(instance_count) AS instance_count FROM inventory_spares_analytics_metrics GROUP BY pn, pn_description ORDER BY instance_count DESC LIMIT 10"
+            ]
+          },
+          {
+            "id": "01f1795da3af181386dfe18736fe6c0c",
+            "question": [
+              "Order fulfillment rate for a specific month and year"
+            ],
+            "sql": [
+              "SELECT MEASURE(fulfillment_rate) AS fulfillment_rate FROM procurement_overhaul_analytics_metrics WHERE year = 2026 AND month = 6"
+            ]
+          },
+          {
+            "id": "01f1795e30c11a07b14e1668ada8a252",
+            "question": [
+              "Total parts in inventory by station"
+            ],
+            "sql": [
+              "SELECT station_code, MEASURE(instance_count) AS instance_count FROM inventory_spares_analytics_metrics WHERE station_code IS NOT NULL GROUP BY station_code ORDER BY instance_count DESC"
+            ]
+          },
+          {
+            "id": "3a3ab3b466895350bd2646a4937913a7",
+            "question": [
+              "Usable spares for part 337-100-305-0 at all stations"
+            ],
+            "sql": [
+              "SELECT condition, station_code, MEASURE(instance_count) AS usable_count FROM inventory_spares_analytics_metrics WHERE pn = '337-100-305-0' AND condition IN ('SV', 'OH', 'INSPTEST', 'NEW') GROUP BY condition, station_code ORDER BY usable_count DESC"
+            ]
+          },
+          {
+            "id": "4b4a3669522b5e2a956400ccb0e80ea4",
+            "question": [
+              "Average repair cost by order type"
+            ],
+            "sql": [
+              "SELECT order_type, MEASURE(avg_repair_cost) AS avg_cost FROM procurement_overhaul_analytics_metrics GROUP BY order_type ORDER BY avg_cost DESC"
+            ]
+          },
+          {
+            "id": "625cddecb5405c7e8c81e95e63c7e91b",
+            "question": [
+              "Total inventory value by condition"
+            ],
+            "sql": [
+              "SELECT condition, MEASURE(total_value) AS value FROM inventory_spares_analytics_metrics GROUP BY condition ORDER BY value DESC"
+            ]
+          },
+          {
+            "id": "a47d73d9b15358b6b731a6004ca48335",
+            "question": [
+              "LLPs with fewer than 1000 cycles remaining"
+            ],
+            "sql": [
+              "SELECT * FROM get_llp_redline_status('1000', '999999', NULL)"
+            ]
+          },
+          {
+            "id": "cbf739ec61af5ee39acff4543db2858b",
+            "question": [
+              "Open repair orders this quarter"
+            ],
+            "sql": [
+              "SELECT MEASURE(open_order_count) FROM procurement_overhaul_analytics_metrics WHERE order_date >= DATE_TRUNC('QUARTER', CURRENT_DATE())"
+            ]
+          },
+          {
+            "id": "e259f12c1e68508bb2ad6e346312360c",
+            "question": [
+              "How many usable (serviceable) spares at PDX?"
+            ],
+            "sql": [
+              "SELECT MEASURE(instance_count) AS usable_spare_count FROM inventory_spares_analytics_metrics WHERE station_code = 'PDX' AND condition IN ('SV', 'OH', 'INSPTEST', 'NEW')"
+            ]
+          },
+          {
+            "id": "f3cd718265265f0a806e95254bbd4be2",
+            "question": [
+              "Order fulfillment rate trend by month"
+            ],
+            "sql": [
+              "SELECT month, year, MEASURE(fulfillment_rate) FROM procurement_overhaul_analytics_metrics GROUP BY month, year ORDER BY year, month"
+            ]
+          }
+        ],
+        "sql_functions": [
+          {
+            "id": "557846534bdd515db25b2516b5523ebb",
+            "identifier": "${catalog}.${gold_schema}.get_spare_availability_by_station"
+          },
+          {
+            "id": "697bd049847b56cc96a6aaab5dc0af73",
+            "identifier": "${catalog}.${gold_schema}.get_inventory_movement_velocity"
+          },
+          {
+            "id": "8a22e7f177425991af85ce95c03d47e5",
+            "identifier": "${catalog}.${gold_schema}.get_llp_redline_status"
+          },
+          {
+            "id": "ae26a59966be5bfc840e80a241221702",
+            "identifier": "${catalog}.${gold_schema}.get_shop_findings_by_part"
+          },
+          {
+            "id": "d88bf95734035cfdaa3b4b8e2979d38d",
+            "identifier": "${catalog}.${gold_schema}.get_order_status_summary"
+          }
+        ],
+        "sql_snippets": {
+          "filters": [
+            {
+              "id": "01f1796ad4a61c79a9a29a3e799659da",
+              "sql": [
+                "inventory_spares_analytics_metrics.condition IN ('SV', 'OH', 'INSPTEST', 'NEW')"
+              ],
+              "display_name": "Usable / available spare conditions"
+            }
+          ]
+        }
       },
       "benchmarks": {
         "questions": [
-          {"id": "bm04", "question": ["How many serviceable spares at PDX?"], "answer": [{"format": "SQL", "content": ["SELECT station_code, MEASURE(serviceable_count) FROM inventory_spares_analytics_metrics WHERE station_code = 'PDX'"]}]},
-          {"id": "bm05", "question": ["Average repair cost by order type"], "answer": [{"format": "SQL", "content": ["SELECT order_type, MEASURE(avg_repair_cost) AS avg_cost FROM procurement_overhaul_analytics_metrics GROUP BY order_type ORDER BY avg_cost DESC"]}]},
-          {"id": "bm06", "question": ["LLPs with fewer than 1000 cycles remaining"], "answer": [{"format": "SQL", "content": ["SELECT * FROM get_llp_redline_status('1000', '999999', NULL)"]}]}
+          {
+            "id": "3245bb8824d45cd88e23f87593377ba5",
+            "question": [
+              "Show the inventory instance count at PDX grouped by condition"
+            ],
+            "answer": [
+              {
+                "format": "SQL",
+                "content": [
+                  "SELECT condition, MEASURE(instance_count) AS instance_count FROM ${catalog}.${gold_schema}.inventory_spares_analytics_metrics WHERE station_code = 'PDX' GROUP BY condition ORDER BY instance_count DESC"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "2c98242fc4b05d4c8e45fd241771d050",
+            "question": [
+              "Average repair cost by order type"
+            ],
+            "answer": [
+              {
+                "format": "SQL",
+                "content": [
+                  "SELECT order_type, MEASURE(avg_repair_cost) AS avg_cost FROM ${catalog}.${gold_schema}.procurement_overhaul_analytics_metrics GROUP BY order_type ORDER BY avg_cost DESC"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "231924a0714155458b129ddc1141430e",
+            "question": [
+              "Show LLP records with remaining_cycles under 1000"
+            ],
+            "answer": [
+              {
+                "format": "SQL",
+                "content": [
+                  "SELECT * FROM ${catalog}.${gold_schema}.get_llp_redline_status('1000', '999999', NULL)"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "01f189f21d851a1991cc17ed09933920",
+            "question": [
+              "how many parts are in PDX stores?"
+            ],
+            "answer": [
+              {
+                "format": "SQL",
+                "content": [
+                  "SELECT MEASURE(instance_count) AS total_parts FROM ${catalog}.${gold_schema}.inventory_spares_analytics_metrics WHERE station_code = 'PDX'"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "01f17643080715dc874f8e5a8502b521",
+            "question": [
+              "Total repair cost by order type"
+            ],
+            "answer": [
+              {
+                "format": "SQL",
+                "content": [
+                  "SELECT order_type, MEASURE(total_repair_cost) AS total_cost FROM ${catalog}.${gold_schema}.procurement_overhaul_analytics_metrics GROUP BY order_type ORDER BY total_cost DESC"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "01f1764307f4198293f693a2832acb47",
+            "question": [
+              "How many total parts are in inventory by station?"
+            ],
+            "answer": [
+              {
+                "format": "SQL",
+                "content": [
+                  "SELECT station_code, MEASURE(instance_count) AS instance_count FROM ${catalog}.${gold_schema}.inventory_spares_analytics_metrics WHERE station_code IS NOT NULL GROUP BY station_code ORDER BY instance_count DESC"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "01f1764307e2135bbd2a71cf75efe4d1",
+            "question": [
+              "Top 10 parts by inventory count"
+            ],
+            "answer": [
+              {
+                "format": "SQL",
+                "content": [
+                  "SELECT pn, pn_description, MEASURE(instance_count) AS instance_count FROM ${catalog}.${gold_schema}.inventory_spares_analytics_metrics GROUP BY pn, pn_description ORDER BY instance_count DESC LIMIT 10"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "01f1764307cc1f31a990bde8f2bcc662",
+            "question": [
+              "Order fulfillment rate trend by month"
+            ],
+            "answer": [
+              {
+                "format": "SQL",
+                "content": [
+                  "SELECT month, year, MEASURE(fulfillment_rate) FROM ${catalog}.${gold_schema}.procurement_overhaul_analytics_metrics GROUP BY month, year ORDER BY year, month"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "01f1764307a51af6b22356cda327ad9c",
+            "question": [
+              "Total inventory value by condition"
+            ],
+            "answer": [
+              {
+                "format": "SQL",
+                "content": [
+                  "SELECT condition, MEASURE(total_value) AS value FROM ${catalog}.${gold_schema}.inventory_spares_analytics_metrics GROUP BY condition ORDER BY value DESC"
+                ]
+              }
+            ]
+          }
         ]
       }
     }

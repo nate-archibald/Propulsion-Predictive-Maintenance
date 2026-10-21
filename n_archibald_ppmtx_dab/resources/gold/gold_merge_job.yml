@@ -12,7 +12,7 @@ resources:
         job_type: merge
         project: qx_ppmtx
       schedule:
-        quartz_cron_expression: "0 0 6 * * ?"
+        quartz_cron_expression: "0 0 7 * * ?"
         timezone_id: America/Los_Angeles
         pause_status: UNPAUSED
       tasks:

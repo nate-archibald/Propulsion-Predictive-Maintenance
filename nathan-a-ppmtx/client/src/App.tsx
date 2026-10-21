@@ -9,11 +9,12 @@ import {
   TooltipProvider,
   useIsMobile,
 } from '@databricks/appkit-ui/react';
-import { Menu, Plane, Search, Settings, Package, BarChart3, AlertTriangle, Sparkles, Sun, Moon } from 'lucide-react';
+import { Menu, Plane, Search, Settings, Package, BarChart3, AlertTriangle, Sparkles, Sun, Moon, Wrench } from 'lucide-react';
 import HomePage from './pages/HomePage';
 import DefectsPage from './pages/DefectsPage';
 import PartsPage from './pages/PartsPage';
 import EnginesPage from './pages/EnginesPage';
+import RemovalPlanPage from './pages/RemovalPlanPage';
 import SparesPage from './pages/SparesPage';
 import ReliabilityPage from './pages/ReliabilityPage';
 import AssistantPage from './pages/AssistantPage';
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { to: '/defects', label: 'Defects', icon: AlertTriangle, end: false },
   { to: '/parts', label: 'Parts', icon: Search, end: false },
   { to: '/engines', label: 'Engines', icon: Settings, end: false },
+  { to: '/removal-plan', label: 'Removal Plan', icon: Wrench, end: false },
   { to: '/spares', label: 'Spares', icon: Package, end: false },
   { to: '/reliability', label: 'Reliability', icon: BarChart3, end: false },
   { to: '/assistant', label: 'Assistant', icon: Sparkles, end: false },
@@ -181,6 +183,7 @@ const router = createBrowserRouter([
       { path: '/defects', element: <DefectsPage /> },
       { path: '/parts', element: <PartsPage /> },
       { path: '/engines', element: <EnginesPage /> },
+      { path: '/removal-plan', element: <RemovalPlanPage /> },
       { path: '/spares', element: <SparesPage /> },
       { path: '/reliability', element: <ReliabilityPage /> },
       { path: '/assistant', element: <AssistantPage /> },

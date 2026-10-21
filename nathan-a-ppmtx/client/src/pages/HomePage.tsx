@@ -212,6 +212,8 @@ export default function HomePage() {
     esns: string[];
     pendingTotal: number;
     pendingEsns: string[];
+    repairTotal: number;
+    repairEsns: string[];
     type: string;
   }>(`/api/serviceable-spares?type=${sparesType}`);
   const { data: fleetLeadersResp, source: fleetLeadersSource } = useLakebaseData<FleetLeadersData>(
@@ -897,7 +899,7 @@ export default function HomePage() {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base">
-              Serviceable Spares ({sparesType === "ENGINE" ? "Engines" : "APUs"})
+              {sparesType === "ENGINE" ? "Spare Engines" : "Spare APUs"}
             </CardTitle>
             <ConnectionStatus source={sparesSource} />
           </div>
@@ -932,11 +934,21 @@ export default function HomePage() {
                   </span>
                 </div>
               )}
+              {(sparesData?.[0]?.repairTotal ?? 0) > 0 && (
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-base font-semibold font-technical text-sky-600">
+                    {sparesData[0].repairTotal}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {sparesType === "ENGINE" ? "engines" : "APUs"} in repair
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* ESN / SN List — Available + Pending inspection (R/I BIN) */}
-          {(sparesData?.[0]?.esns?.length ?? 0) > 0 || (sparesData?.[0]?.pendingEsns?.length ?? 0) > 0 ? (
+          {/* ESN / SN List — Available + Pending inspection (R/I BIN) + In repair (open RO) */}
+          {(sparesData?.[0]?.esns?.length ?? 0) > 0 || (sparesData?.[0]?.pendingEsns?.length ?? 0) > 0 || (sparesData?.[0]?.repairEsns?.length ?? 0) > 0 ? (
             <div className="space-y-2">
               {(sparesData?.[0]?.esns?.length ?? 0) > 0 && (
                 <div className="border rounded-md bg-muted/50 p-2.5 max-h-36 overflow-y-auto">
@@ -962,6 +974,23 @@ export default function HomePage() {
                   </p>
                   <div className="space-y-1">
                     {sparesData[0].pendingEsns.map((esn) => (
+                      <div
+                        key={esn}
+                        className="text-sm font-mono p-1 hover:bg-background rounded"
+                      >
+                        {esn}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(sparesData?.[0]?.repairEsns?.length ?? 0) > 0 && (
+                <div className="border border-sky-300 rounded-md bg-sky-50/60 p-2.5 max-h-36 overflow-y-auto">
+                  <p className="text-xs font-medium text-sky-700 mb-1.5 uppercase tracking-wider">
+                    In repair — open RO
+                  </p>
+                  <div className="space-y-1">
+                    {sparesData[0].repairEsns.map((esn) => (
                       <div
                         key={esn}
                         className="text-sm font-mono p-1 hover:bg-background rounded"

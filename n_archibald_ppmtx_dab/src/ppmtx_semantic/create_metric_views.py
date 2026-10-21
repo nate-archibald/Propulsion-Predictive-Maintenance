@@ -257,19 +257,19 @@ measures:
     expr: SUM(source.delays_hours)
     synonyms: [delay_hours, hours_delayed]
   - name: cancellation_count
-    expr: "COUNT(CASE WHEN source.cancellation = 'Y' THEN 1 END)"
+    expr: "COUNT(CASE WHEN source.cancellation IS NOT NULL AND TRIM(source.cancellation) <> '' AND UPPER(TRIM(source.cancellation)) <> 'N' THEN 1 END)"
     synonyms: [cancellations, cnx_count, flights_cancelled]
   - name: delay_event_count
-    expr: "COUNT(CASE WHEN source.delay = 'Y' THEN 1 END)"
+    expr: "COUNT(CASE WHEN source.delay IS NOT NULL AND TRIM(source.delay) <> '' AND UPPER(TRIM(source.delay)) <> 'N' THEN 1 END)"
     synonyms: [delays, delay_events, flights_delayed]
   - name: ifsd_count
-    expr: "COUNT(CASE WHEN source.i_f_s_d = 'Y' THEN 1 END)"
+    expr: "COUNT(CASE WHEN source.i_f_s_d IS NOT NULL AND TRIM(source.i_f_s_d) <> '' AND UPPER(TRIM(source.i_f_s_d)) <> 'N' THEN 1 END)"
     synonyms: [ifsds, in_flight_shutdowns, engine_shutdowns]
   - name: mel_deferral_count
-    expr: "COUNT(CASE WHEN source.mel = 'Y' THEN 1 END)"
+    expr: "COUNT(CASE WHEN source.mel IS NOT NULL AND TRIM(source.mel) <> '' AND UPPER(TRIM(source.mel)) <> 'N' THEN 1 END)"
     synonyms: [mel_items, mel_deferrals]
   - name: deferral_count
-    expr: "COUNT(CASE WHEN source.defer = 'Y' THEN 1 END)"
+    expr: "COUNT(CASE WHEN source.defer IS NOT NULL AND TRIM(source.defer) <> '' AND UPPER(TRIM(source.defer)) <> 'N' THEN 1 END)"
     synonyms: [deferrals, deferred_items]
 $$
 """, "defect_intelligence_analytics_metrics")

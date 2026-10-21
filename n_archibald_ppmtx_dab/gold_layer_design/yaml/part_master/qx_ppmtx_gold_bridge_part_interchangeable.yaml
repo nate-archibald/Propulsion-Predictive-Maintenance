@@ -1,0 +1,148 @@
+table_name: qx_ppmtx_gold_bridge_part_interchangeable
+entity_type: bridge
+domain: part_master
+grain: "One row per directed interchangeable part-number pair (pn -> pn_interchangeable). Two-way source pairs are materialized in both directions; one-way source pairs only in the stated direction."
+description: "Bridge table capturing part-number interchangeability. Business: lets any query that names a part number automatically resolve every physically-equivalent alternate PN, so callouts, forecasts, spares counts, and BOMs never miss an interchangeable unit and never show a stocked alternate as 'missing'. Technical: directed-pair bridge unioned from Silver qx_ppmtx_pn_interchangeable (two-way, emitted both directions) and qx_ppmtx_pn_interchg_one_way (one-way, emitted base->alt only), self-pairs dropped, deduped per directed pair preferring two_way. Both sides LEFT-joined to dim_part; the alternate PN may not exist in pn_master, so dim_part_key_interchangeable is nullable while pn_interchangeable is always populated. Direct (non-transitive) interchangeability only."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "part_master"
+  entity_type: "bridge"
+  grain: "pn + pn_interchangeable (directed)"
+
+primary_key: ["bridge_part_interchangeable_key"]
+
+foreign_keys:
+  - columns: ["dim_part_key"]
+    references: qx_ppmtx_gold_dim_part(dim_part_key)
+    nullable: true
+  - columns: ["dim_part_key_interchangeable"]
+    references: qx_ppmtx_gold_dim_part(dim_part_key)
+    nullable: true
+
+columns:
+  - name: bridge_part_interchangeable_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for the interchangeable-pair bridge. Business: unique identifier for each directed part-substitution relationship. Technical: generated via hash of (pn, pn_interchangeable)."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: pn
+      transformation: GENERATED
+      transformation_logic: "HASH(pn, pn_interchangeable)"
+
+  - name: dim_part_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to the base part in the part dimension. Business: the part number being queried / called out. Technical: LEFT-join on pn to dim_part; null if the base PN is not in pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: pn
+      transformation: LOOKUP
+      transformation_logic: "LEFT JOIN qx_ppmtx_gold_dim_part ON pn = dim_part.pn"
+
+  - name: dim_part_key_interchangeable
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to the interchangeable (alternate) part in the part dimension. Business: the equivalent part that can be substituted. Technical: LEFT-join on pn_interchangeable to dim_part; null if the alternate PN is not in pn_master."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: pn_interchangeable
+      transformation: LOOKUP
+      transformation_logic: "LEFT JOIN qx_ppmtx_gold_dim_part ON pn_interchangeable = dim_part.pn"
+
+  - name: pn
+    data_type: STRING
+    nullable: false
+    description: "Base part number. Business: the part number being queried or called out. Technical: natural key from the interchangeability source, part of grain."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: pn
+      transformation: DIRECT_COPY
+      transformation_logic: "pn"
+
+  - name: pn_interchangeable
+    data_type: STRING
+    nullable: false
+    description: "Interchangeable (alternate) part number. Business: a part that is physically equivalent to and can be substituted for the base part. Technical: natural key from the interchangeability source, part of grain."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: pn_interchangeable
+      transformation: DIRECT_COPY
+      transformation_logic: "pn_interchangeable"
+
+  - name: interchange_class
+    data_type: STRING
+    nullable: false
+    description: "Interchangeability class: 'two_way' (fully bidirectional equivalence) or 'one_way' (base may be replaced by alternate, not necessarily the reverse). Business: drives directional badging in the app. Technical: literal assigned by the source table the row was derived from."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: pn
+      transformation: GENERATED
+      transformation_logic: "'two_way' from qx_ppmtx_pn_interchangeable, 'one_way' from qx_ppmtx_pn_interchg_one_way"
+
+  - name: interchangeable_type
+    data_type: STRING
+    nullable: true
+    description: "Interchangeability type code from TRAX (e.g., 'M'). Business: the engineering classification of the substitution. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: interchangeable_type
+      transformation: DIRECT_COPY
+      transformation_logic: "interchangeable_type"
+
+  - name: prefer
+    data_type: STRING
+    nullable: true
+    description: "Preferred-substitute flag. Business: indicates whether this alternate is the preferred substitution choice. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: prefer
+      transformation: DIRECT_COPY
+      transformation_logic: "prefer"
+
+  - name: manufacturer
+    data_type: STRING
+    nullable: true
+    description: "Manufacturer of the alternate part (two-way source only). Business: identifies the vendor/program the interchangeable PN belongs to. Technical: attribute from Silver; null for one-way rows."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: manufacturer
+      transformation: DIRECT_COPY
+      transformation_logic: "manufacturer"
+
+  - name: vendor
+    data_type: STRING
+    nullable: true
+    description: "Vendor code associated with the interchangeability record. Business: sourcing vendor for the alternate part. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: vendor
+      transformation: DIRECT_COPY
+      transformation_logic: "vendor"
+
+  - name: source_status
+    data_type: STRING
+    nullable: true
+    description: "Status of the source interchangeability record. Business: 'ACTIVE' for two-way rows (only active rows are synced); null for one-way rows which have no status. Technical: status from Silver, one-way source has no status column."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: status
+      transformation: DIRECT_COPY
+      transformation_logic: "status (two_way) / NULL (one_way)"
+
+  - name: modified_date
+    data_type: TIMESTAMP
+    nullable: true
+    description: "Last-modified timestamp of the source interchangeability record. Business: recency of the substitution rule. Technical: max of the contributing source rows for the directed pair."
+    lineage:
+      source_table: qx_ppmtx_pn_interchangeable
+      silver_column: modified_date
+      transformation: DIRECT_COPY
+      transformation_logic: "modified_date"

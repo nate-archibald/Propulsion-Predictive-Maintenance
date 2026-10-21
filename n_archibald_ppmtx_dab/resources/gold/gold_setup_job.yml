@@ -14,6 +14,11 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.silver_schema}
+              # Safety default: never recreate existing tables (would break every
+              # Lakebase sync checkpoint reading them). Override only for a
+              # deliberate, one-off full schema rebuild via a manual run with
+              # force_recreate=true, and full-refresh affected syncs afterward.
+              force_recreate: "false"
           environment_key: gold_env
 
         - task_key: add_fk_constraints

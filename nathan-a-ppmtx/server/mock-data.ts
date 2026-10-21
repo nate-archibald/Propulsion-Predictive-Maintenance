@@ -66,6 +66,16 @@ export const MOCK_ENGINES: Row[] = [
   { engineSN: "ESN-31047", tail: "N642QX", engineType: "CF34-8E", position: "L", totalHours: 14100, totalCycles: 19800, lastShopVisit: "2023-09-15", parts: MOCK_PARTS.filter((p) => p.engineSN === "ESN-31047") },
 ];
 
+// Engine Removal Plan — HSR Data (live Time Since HSR + projected removal).
+// Post-mapper camelCase shape so the frontend renders identically in mock + live.
+export const MOCK_HSR: Row[] = [
+  { engineSN: "902973", pn: "CF34-8E5G01", resetDate: "2021-08-14", tshsi: 13820, hsrTarget: 15000, tshsrRemaining: 1180, currentlyInstalled: true, installedAC: "641QX", position: "ENG-2", onWingPeriods: 2, hrsPerDay: 7.6, cyclesPerDay: 6.1, utilWindowDays: 90, minCyclesRemaining: 4200, bindingLlpPN: "4125T23P04", bindingLlpSN: "GATJ77AA", hsrDate: "2027-01-01", llpDate: "2028-11-10", bindingConstraint: "HSR", projectedRemovalDate: "2027-01-01", daysToRemoval: 155, asOfDate: "2026-10-14" },
+  { engineSN: "902606", pn: "CF34-8E5G01", resetDate: "2022-05-24", tshsi: 10797, hsrTarget: 15000, tshsrRemaining: 4203, currentlyInstalled: true, installedAC: "623QX", position: "ENG-2", onWingPeriods: 1, hrsPerDay: 7.53, cyclesPerDay: 5.96, utilWindowDays: 89, minCyclesRemaining: 6891, bindingLlpPN: "4125T23P04", bindingLlpSN: "GATJ61EM", hsrDate: "2028-04-15", llpDate: "2029-12-01", bindingConstraint: "HSR", projectedRemovalDate: "2028-04-15", daysToRemoval: 558, asOfDate: "2026-10-14" },
+  { engineSN: "902689", pn: "CF34-8E5G01", resetDate: "2023-05-01", tshsi: 8843, hsrTarget: 15000, tshsrRemaining: 6157, currentlyInstalled: true, installedAC: "630QX", position: "ENG-2", onWingPeriods: 1, hrsPerDay: 7.57, cyclesPerDay: 6.28, utilWindowDays: 90, minCyclesRemaining: 7600, bindingLlpPN: "4125T22P04", bindingLlpSN: "GATJ62BC", hsrDate: "2028-11-20", llpDate: "2029-09-01", bindingConstraint: "HSR", projectedRemovalDate: "2028-11-20", daysToRemoval: 813, asOfDate: "2026-10-14" },
+  { engineSN: "902850", pn: "CF34-8E5G01", resetDate: "2025-11-21", tshsi: 568, hsrTarget: 15000, tshsrRemaining: 14432, currentlyInstalled: true, installedAC: "633QX", position: "ENG-1", onWingPeriods: 1, hrsPerDay: 7.4, cyclesPerDay: 5.9, utilWindowDays: 90, minCyclesRemaining: 24100, bindingLlpPN: "4125T23P04", bindingLlpSN: "GATJ90ZZ", hsrDate: "2031-05-01", llpDate: "2037-01-01", bindingConstraint: "HSR", projectedRemovalDate: "2031-05-01", daysToRemoval: 1950, asOfDate: "2026-10-14" },
+  { engineSN: "902925", pn: "CF34-8E5G01", resetDate: "2025-11-25", tshsi: 0, hsrTarget: 15000, tshsrRemaining: 15000, currentlyInstalled: false, installedAC: "", position: "", onWingPeriods: 0, hrsPerDay: null, cyclesPerDay: null, utilWindowDays: null, minCyclesRemaining: null, bindingLlpPN: "", bindingLlpSN: "", hsrDate: null, llpDate: null, bindingConstraint: null, projectedRemovalDate: null, daysToRemoval: null, asOfDate: "2026-10-14" },
+];
+
 export const MOCK_DEFECTS_BY_ATA: Row[] = [
   { ata: "73-21", description: "Engine Fuel & Control", count: 3, delayMinutes: 47, cancels: 1 },
   { ata: "72-50", description: "Engine Turbine", count: 2, delayMinutes: 0, cancels: 1 },
@@ -78,10 +88,10 @@ export const MOCK_DEFECTS_BY_ATA: Row[] = [
 ];
 
 export const MOCK_WEEKLY_DEFECT_TREND: Row[] = [
-  { week: "W14", count: 4 }, { week: "W15", count: 6 }, { week: "W16", count: 3 },
-  { week: "W17", count: 5 }, { week: "W18", count: 7 }, { week: "W19", count: 4 },
-  { week: "W20", count: 8 }, { week: "W21", count: 6 }, { week: "W22", count: 5 },
-  { week: "W23", count: 9 },
+  { week: "W14", count: 4, delayMinutes: 30 }, { week: "W15", count: 6, delayMinutes: 55 }, { week: "W16", count: 3, delayMinutes: 12 },
+  { week: "W17", count: 5, delayMinutes: 40 }, { week: "W18", count: 7, delayMinutes: 65 }, { week: "W19", count: 4, delayMinutes: 20 },
+  { week: "W20", count: 8, delayMinutes: 80 }, { week: "W21", count: 6, delayMinutes: 35 }, { week: "W22", count: 5, delayMinutes: 25 },
+  { week: "W23", count: 9, delayMinutes: 70 },
 ];
 
 export const MOCK_ECMP_DETAILS: Row[] = [
@@ -91,6 +101,18 @@ export const MOCK_ECMP_DETAILS: Row[] = [
   { eo: "ECMP-4563", description: "N637QX ENG 2 T/R LH FEEDBACK ACTUATOR #4 REPLACEMENT DUE TO POSITION SENSOR DISAGREE FC.", ac: "N637QX" },
   { eo: "ECMP-4562", description: "N630QX #1 ENGINE MAINTENANCE DUE TO EGT MARGIN DROP- COMPRESSOR WASH", ac: "N630QX" },
   { eo: "ECMP-4561", description: "N637QX #2 ENGINE - NEW MAPPING SP097 & PINS SET REPLACEMENT DUE TO ADVERSE VIBRATION TREND", ac: "N637QX" },
+];
+
+export const MOCK_DELAY_DETAILS: Row[] = [
+  { date: "2026-09-19", ac: "N628QX", station: "SEA", writeUp: "ENG #1 EGT EXCEEDANCE ON START - MAINTENANCE ACTION REQUIRED PRIOR TO DEPARTURE", delayMinutes: 42 },
+  { date: "2026-09-15", ac: "N634QX", station: "PDX", writeUp: "APU FAILED TO START - APU CONTROLLER RESET AND RETEST", delayMinutes: 28 },
+  { date: "2026-09-06", ac: "N643QX", station: "SEA", writeUp: "ENG #2 VIBRATION INDICATION ABOVE LIMITS - BORESCOPE INSPECTION PERFORMED", delayMinutes: 32 },
+  { date: "2026-09-06", ac: "N627QX", station: "BOI", writeUp: "ENG #1 OIL PRESSURE FLUCTUATION - SENSOR REPLACED", delayMinutes: 14 },
+];
+
+export const MOCK_CANCEL_DETAILS: Row[] = [
+  { date: "2026-08-22", ac: "N637QX", station: "SEA", writeUp: "ENG #2 IN-FLIGHT SHUTDOWN INDICATION - AOG PART REQUIRED, NOT AVAILABLE AT STATION", reason: "MECH" },
+  { date: "2026-08-11", ac: "N630QX", station: "GEG", writeUp: "AIRCRAFT SWAP DUE TO DOWNSTREAM MECHANICAL DELAY ON PRIOR ROTATION", reason: "CONSEQ" },
 ];
 
 export const MOCK_KPIS: Row = {

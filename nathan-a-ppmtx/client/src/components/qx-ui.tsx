@@ -114,6 +114,25 @@ export function RiskBadge({ risk }: { risk: string }) {
   );
 }
 
+/** Cancellation reason codes used on the Delay/Cancellation KPI dropdowns. */
+const CANCEL_REASON_TONE: Record<string, Tone> = {
+  MECH: "destructive",
+  CONSEQ: "warning",
+};
+const CANCEL_REASON_LABEL: Record<string, string> = {
+  MECH: "Mechanical",
+  CONSEQ: "Consequential (downstream of another delay/cancel)",
+};
+export function CancelReasonBadge({ reason }: { reason: string }) {
+  return (
+    <StatusBadge
+      label={reason || "Unknown"}
+      tone={CANCEL_REASON_TONE[reason] ?? "muted"}
+      title={CANCEL_REASON_LABEL[reason]}
+    />
+  );
+}
+
 /**
  * "+N more" overflow badge for compressing multi-value lists (e.g. a list
  * of part numbers on the Spares Quick View) without losing information —

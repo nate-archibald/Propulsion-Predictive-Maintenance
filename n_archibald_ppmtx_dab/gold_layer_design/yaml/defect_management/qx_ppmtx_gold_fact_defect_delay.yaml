@@ -1,0 +1,205 @@
+table_name: qx_ppmtx_gold_fact_defect_delay
+entity_type: fact
+domain: defect_management
+grain: "One row per delay/cancellation event, identified by id"
+update_frequency: hourly
+fact_type: transaction
+description: "Flight delay/cancellation event fact capturing operational impact of maintenance defects. Business: replaces the stale rolled-up delay/cancellation columns on fact_defect (which only reflect the last-known state per defect) with the authoritative per-event detail feed, enabling accurate Overview KPI reporting on delay minutes and cancellation counts. Technical: transaction fact sourced from Silver qx_ppmtx_defect_report_delay with surrogate key joins to dim_aircraft, dim_ata_chapter, and dim_date."
+catalog: subject_maintenanceengineering
+schema: an_maintenanceengineering_ods
+clustering: auto
+table_properties:
+  delta.enableChangeDataFeed: "true"
+  delta.enableRowTracking: "true"
+  delta.autoOptimize.optimizeWrite: "true"
+  delta.autoOptimize.autoCompact: "true"
+  layer: "gold"
+  domain: "defect_management"
+  entity_type: "fact"
+  grain: "id"
+  fact_type: "transaction"
+
+primary_key: ["fact_defect_delay_key"]
+
+foreign_keys:
+  - columns: ["dim_aircraft_key"]
+    references: qx_ppmtx_gold_dim_aircraft(dim_aircraft_key)
+    nullable: true
+  - columns: ["delay_date_key"]
+    references: qx_ppmtx_gold_dim_date(dim_date_key)
+    nullable: true
+
+measures:
+  - delay_hour
+  - delay_minutes
+
+columns:
+  - name: fact_defect_delay_key
+    data_type: BIGINT
+    nullable: false
+    description: "Surrogate key for the delay/cancellation event fact. Business: unique identifier for each delay/cancellation event. Technical: direct copy of the source `id` column, which is unique per row in Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: id
+      transformation: DIRECT_COPY
+      transformation_logic: "id"
+
+  - name: dim_aircraft_key
+    data_type: BIGINT
+    nullable: true
+    description: "Foreign key to aircraft dimension. Business: identifies the aircraft affected by this delay/cancellation event. Technical: lookup join on ac to dim_aircraft."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: ac
+      transformation: LOOKUP
+      transformation_logic: "JOIN qx_ppmtx_gold_dim_aircraft ON ac = dim_aircraft.ac"
+
+  - name: delay_date_key
+    data_type: INT
+    nullable: true
+    description: "Foreign key to date dimension for the delay/cancellation date. Business: when the delay or cancellation occurred, used for timeframe-scoped KPI filtering. Technical: CAST(date_format(delay_date, 'yyyyMMdd') AS INT)."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: delay_date
+      transformation: DERIVED_CALCULATION
+      transformation_logic: "CAST(date_format(CAST(delay_date AS DATE), 'yyyyMMdd') AS INT)"
+
+  - name: defect_type
+    data_type: STRING
+    nullable: true
+    description: "Defect type code of the parent defect. Business: links this delay event back to its originating defect record for cross-fact analysis. Technical: attribute from Silver, joinable to fact_defect.defect_type."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: defect_type
+      transformation: DIRECT_COPY
+      transformation_logic: "defect_type"
+
+  - name: defect
+    data_type: STRING
+    nullable: true
+    description: "Parent defect number. Business: links this delay event back to its originating defect record. Technical: attribute from Silver, joinable to fact_defect.defect."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: defect
+      transformation: DIRECT_COPY
+      transformation_logic: "defect"
+
+  - name: defect_item
+    data_type: DECIMAL
+    nullable: true
+    description: "Parent defect line item number. Business: links this delay event back to its originating defect line item. Technical: attribute from Silver, joinable to fact_defect.defect_item."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: defect_item
+      transformation: DIRECT_COPY
+      transformation_logic: "defect_item"
+
+  - name: delay_item
+    data_type: DECIMAL
+    nullable: true
+    description: "Delay line item sequence number. Business: distinguishes multiple delay events tied to the same defect line item. Technical: degenerate dimension from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: delay_item
+      transformation: DIRECT_COPY
+      transformation_logic: "delay_item"
+
+  - name: delay_type
+    data_type: STRING
+    nullable: true
+    description: "Delay type classification. Business: categorizes the nature of the delay event. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: delay_type
+      transformation: DIRECT_COPY
+      transformation_logic: "delay_type"
+
+  - name: delay_hour
+    data_type: DECIMAL
+    nullable: true
+    description: "Delay duration in hours. Business: flight delay hours attributed to this event. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: delay_hour
+      transformation: DIRECT_COPY
+      transformation_logic: "delay_hour"
+
+  - name: delay_minutes
+    data_type: DECIMAL
+    nullable: true
+    description: "Delay duration in minutes. Business: the authoritative measure for the Overview page's total-delay-minutes KPI. Technical: additive measure from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: delay_minutes
+      transformation: DIRECT_COPY
+      transformation_logic: "delay_minutes"
+
+  - name: cancellation
+    data_type: STRING
+    nullable: true
+    description: "Cancellation reason code (e.g. MECH, CONSEQ). Business: non-blank whenever this event represents a flight cancellation; the authoritative source for the Overview page's cancellation-count KPI. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: cancellation
+      transformation: DIRECT_COPY
+      transformation_logic: "cancellation"
+
+  - name: canx
+    data_type: STRING
+    nullable: true
+    description: "Cancellation flag. Business: secondary cancellation indicator carried alongside the reason code. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: canx
+      transformation: DIRECT_COPY
+      transformation_logic: "canx"
+
+  - name: delay_reason
+    data_type: STRING
+    nullable: true
+    description: "Free-text delay reason. Business: narrative context for the delay event. Technical: text attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: delay_reason
+      transformation: DIRECT_COPY
+      transformation_logic: "delay_reason"
+
+  - name: delay_code
+    data_type: STRING
+    nullable: true
+    description: "Standardized delay code. Business: enables delay trending by code for reliability reporting. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: delay_code
+      transformation: DIRECT_COPY
+      transformation_logic: "delay_code"
+
+  - name: flight
+    data_type: STRING
+    nullable: true
+    description: "Flight number. Business: the flight affected by this delay/cancellation event. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: flight
+      transformation: DIRECT_COPY
+      transformation_logic: "flight"
+
+  - name: station
+    data_type: STRING
+    nullable: true
+    description: "Station code where the delay/cancellation occurred. Business: enables station-level operational impact analysis. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: station
+      transformation: DIRECT_COPY
+      transformation_logic: "station"
+
+  - name: destination
+    data_type: STRING
+    nullable: true
+    description: "Destination station code. Business: additional operational routing context. Technical: attribute from Silver."
+    lineage:
+      source_table: qx_ppmtx_defect_report_delay
+      silver_column: destination
+      transformation: DIRECT_COPY
+      transformation_logic: "destination"
