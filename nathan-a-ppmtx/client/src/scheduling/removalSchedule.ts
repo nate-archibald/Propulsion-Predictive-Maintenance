@@ -144,7 +144,18 @@ function startOfDay(d: Date): Date {
 }
 
 function addDays(base: Date, days: number): Date {
-  return new Date(base.getTime() + Math.round(days) * DAY_MS);
+  // Calendar-day arithmetic (not fixed-ms) so daylight-saving transitions never
+  // shift a result onto the wrong day — a fixed 86.4M-ms step lands an hour
+  // short across a fall-back boundary and snaps the Monday a full week early.
+  return new Date(
+    base.getFullYear(),
+    base.getMonth(),
+    base.getDate() + Math.round(days),
+    base.getHours(),
+    base.getMinutes(),
+    base.getSeconds(),
+    base.getMilliseconds(),
+  );
 }
 
 function iso(d: Date): string {
@@ -386,9 +397,25 @@ export function buildRemovalPlan(
         : Math.min(due, removalDays[i + 1] - spacingDays);
   }
 
+  // 2b) Forward re-spacing pass. The backward pass anchors from the LAST
+  //     engine's due date; when more engines are due than can fit in the horizon
+  //     at the given spacing (e.g. extending to 48 months), the earliest engines
+  //     get pushed to negative days. Without this pass they would all snap onto
+  //     the first Monday below, stacking a cluster of same-day removals that
+  //     drains the spare pool instantly (the "immediate usage of N engines"
+  //     artifact). Instead, clamp to the future and spread any overflow forward
+  //     by the spacing cadence. Engines already satisfying the cadence are
+  //     untouched, so the near-term plan stays stable as the horizon grows.
+  const firstMonday = mondayOnOrBefore(addDays(today, 6)); // this/next Monday
+  const firstMondayDay = (firstMonday.getTime() - today.getTime()) / DAY_MS;
+  let floorDay = firstMondayDay;
+  for (let i = 0; i < candidates.length; i++) {
+    if (removalDays[i] < floorDay) removalDays[i] = floorDay;
+    floorDay = removalDays[i] + spacingDays;
+  }
+
   // 3) Snap each removal to the Monday on/before, clamped to no earlier than the
   //    coming Monday (can't remove in the past).
-  const firstMonday = mondayOnOrBefore(addDays(today, 6)); // this/next Monday
   const removalDates = candidates.map((_, i) => {
     let m = mondayOnOrBefore(addDays(today, removalDays[i]));
     if (m.getTime() < firstMonday.getTime()) m = firstMonday;

@@ -61,6 +61,37 @@ describe("buildRemovalPlan — baseline (no constraints)", () => {
   });
 });
 
+describe("buildRemovalPlan — overflow does not stack on the first Monday", () => {
+  it("spreads engines forward instead of clustering same-day removals when the horizon is over capacity", () => {
+    // 20 engines due tightly packed (10 days apart) while spacing is 3 weeks
+    // (21 days). The backward pass would push the earliest engines to negative
+    // days; without forward re-spacing they would all snap onto the first
+    // Monday, draining the spare pool instantly. Each must land on a distinct
+    // Monday instead.
+    const many: HsrEngine[] = [];
+    for (let i = 0; i < 20; i++) {
+      many.push(engine(`ESN-${100 + i}`, `N${100 + i}`, 1000 + i * 100)); // due ~100,110,...290 days
+    }
+    const plan = buildRemovalPlan(many, { ...BASE, horizonMonths: 48 });
+    expect(plan.rows).toHaveLength(20);
+
+    const dates = plan.rows.map((r) => r.removalDate);
+    // The reported bug: ~10 engines all snapped onto the first Monday, draining
+    // the spare pool instantly. After the fix every removal lands on a distinct
+    // Monday, strictly increasing and spaced ≥ 3 weeks apart (no same-day stack).
+    expect(new Set(dates).size).toBe(dates.length);
+    const firstWeekCount = dates.filter((d) => d === dates[0]).length;
+    expect(firstWeekCount).toBe(1);
+    for (let i = 1; i < dates.length; i++) {
+      expect(dates[i] > dates[i - 1]).toBe(true);
+      const prev = new Date(dates[i - 1]).getTime();
+      const cur = new Date(dates[i]).getTime();
+      expect(cur - prev).toBeGreaterThanOrEqual(21 * 86_400_000);
+    }
+  });
+});
+
+
 describe("buildRemovalPlan — order constraint", () => {
   it("schedules a named engine first", () => {
     const constraints: PlanConstraints = { order: ["ESN-0003"] };
