@@ -474,11 +474,8 @@ export default function RemovalPlanPage() {
           <span className="text-xs font-medium text-muted-foreground">
             Assumptions:
           </span>
-          <NumField label="Fallback FH/day" value={config.fhPerDay} onChange={(n) => setField({ fhPerDay: n })} step="0.1" />
-          <NumField label="Fallback FC/day" value={config.fcPerDay} onChange={(n) => setField({ fcPerDay: n })} step="0.1" />
-          <span className="text-[11px] italic text-muted-foreground basis-full">
-            Binding limits use each engine's own observed FH/FC utilization; these fleet rates apply only to engines with no observed rate.
-          </span>
+          <NumField label="FH/day" value={config.fhPerDay} onChange={(n) => setField({ fhPerDay: n })} step="0.1" />
+          <NumField label="FC/day" value={config.fcPerDay} onChange={(n) => setField({ fcPerDay: n })} step="0.1" />
           <NumField label="Shop TAT" value={config.tatDays} onChange={(n) => setField({ tatDays: n })} suffix="days" />
           <NumField
             label="Spacing"
