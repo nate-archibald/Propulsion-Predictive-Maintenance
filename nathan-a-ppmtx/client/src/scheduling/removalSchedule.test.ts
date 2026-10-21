@@ -128,6 +128,29 @@ describe("buildRemovalPlan — force removals before limit", () => {
 });
 
 
+describe("buildRemovalPlan — a far-future cluster does not yank engines early", () => {
+  it("schedules every engine near its own due date, not dozens of weeks early", () => {
+    // 80 engines all due far out (~1,120–1,910 days), 10 days apart. The old
+    // backward pass chained the full 3-week target spacing back from the last
+    // engine, so this future cluster cascaded into the present and pulled the
+    // earliest engines ~100+ weeks early (bunched at the front). Each engine
+    // should now sit within ~one target interval of its own due date.
+    const cluster: HsrEngine[] = [];
+    for (let i = 0; i < 80; i++) {
+      cluster.push(engine(`ESN-${300 + i}`, `N${300 + i}`, 11_200 + i * 100));
+    }
+    const plan = buildRemovalPlan(cluster, { ...BASE, horizonMonths: 72 });
+    expect(plan.rows).toHaveLength(80);
+    // No engine is pulled more than ~one target interval (3 wk) early — the old
+    // bug produced 74+ week early pulls.
+    const maxEarly = Math.max(...plan.rows.map((r) => r.weeksEarly));
+    expect(maxEarly).toBeLessThan(6);
+    // And nothing is dumped onto the near-term Mondays: the first removal is far
+    // out (close to the earliest engine's due date), not this month.
+    expect(plan.rows[0].removalDate > "2029-01-01").toBe(true);
+  });
+});
+
 describe("buildRemovalPlan — order constraint", () => {
   it("schedules a named engine first", () => {
     const constraints: PlanConstraints = { order: ["ESN-0003"] };

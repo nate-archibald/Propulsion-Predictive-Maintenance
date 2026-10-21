@@ -419,28 +419,38 @@ export function buildRemovalPlan(
     return ceil;
   });
 
-  // 2) Assign removal days, latest-first (ALAP), keeping the TARGET cadence
-  //    where there's room; never later than an engine's scheduling ceiling.
+  // 2) Assign removal days, latest-first (ALAP). Prefer the TARGET cadence for
+  //    breathing room, but CAP how early any engine may be pulled *for spacing*
+  //    to a single target interval. Without this cap the old pass chained the
+  //    full target spacing backward from the last engine, so a large far-future
+  //    cluster cascaded into the present and yanked near-term engines dozens of
+  //    weeks early (then the forward pass dumped the overflow onto the first few
+  //    Mondays — the "80 bunched, 74-weeks-early" artifact). With the cap, an
+  //    engine sits at its own ceiling unless a *nearby* neighbor forces it in;
+  //    genuine clusters still compress down to the 1-week floor, and no engine
+  //    is ever placed after its ceiling.
+  const earlyCap = spacingDays; // max early-pull for spacing (beyond forced min compression)
   const removalDays = new Array<number>(candidates.length);
   for (let i = candidates.length - 1; i >= 0; i--) {
-    const due = ceilingDays[i];
-    removalDays[i] =
-      i === candidates.length - 1
-        ? due
-        : Math.min(due, removalDays[i + 1] - spacingDays);
+    const ceil = ceilingDays[i];
+    if (i === candidates.length - 1) {
+      removalDays[i] = ceil;
+      continue;
+    }
+    const next = removalDays[i + 1];
+    const targetPos = Math.min(ceil, next - spacingDays); // where target spacing wants it
+    const earlyFloor = ceil - earlyCap; // don't pull more than one interval early for spacing
+    let day = Math.max(targetPos, earlyFloor); // cap the spacing-driven early pull
+    day = Math.min(day, next - MIN_SPACING_DAYS); // hard 1-week floor (mandatory compression)
+    removalDays[i] = day;
   }
 
-  // 2b) Forward re-spacing pass (the Option-B compression step). The backward
-  //     pass anchors from the LAST engine's due date at the TARGET cadence; when
-  //     more engines are due than can fit before their ceilings at that cadence
-  //     (e.g. a congested cluster, or extending to 48 months), the earliest ones
-  //     get pushed to negative days. Without this pass they would all snap onto
-  //     the first Monday below, stacking same-day removals that drain the spare
-  //     pool instantly. Instead, clamp to the future and pack any overflow
-  //     forward at the fixed 1-WEEK floor (MIN_SPACING_DAYS) — so the cadence
-  //     compresses ONLY inside the congested window and relaxes straight back to
-  //     the target spacing once it catches up. Engines already satisfying the
-  //     target cadence are untouched, so the near-term plan stays stable.
+  // 2b) Forward feasibility pass. After the capped backward pass an engine only
+  //     lands before today when the fleet is GENUINELY over capacity near the
+  //     start (more engines due soon than can fit even at the 1-week floor).
+  //     Clamp those to the coming Monday and pack forward at the 1-week floor so
+  //     they don't stack same-day (which would drain the spare pool instantly).
+  //     In the healthy case nothing moves here.
   const firstMonday = mondayOnOrBefore(addDays(today, 6)); // this/next Monday
   const firstMondayDay = (firstMonday.getTime() - today.getTime()) / DAY_MS;
   let floorDay = firstMondayDay;
