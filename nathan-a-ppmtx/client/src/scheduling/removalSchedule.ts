@@ -419,29 +419,70 @@ export function buildRemovalPlan(
     return ceil;
   });
 
-  // 2) Assign removal days, latest-first (ALAP). Prefer the TARGET cadence for
-  //    breathing room, but CAP how early any engine may be pulled *for spacing*
-  //    to a single target interval. Without this cap the old pass chained the
-  //    full target spacing backward from the last engine, so a large far-future
-  //    cluster cascaded into the present and yanked near-term engines dozens of
-  //    weeks early (then the forward pass dumped the overflow onto the first few
-  //    Mondays — the "80 bunched, 74-weeks-early" artifact). With the cap, an
-  //    engine sits at its own ceiling unless a *nearby* neighbor forces it in;
-  //    genuine clusters still compress down to the 1-week floor, and no engine
-  //    is ever placed after its ceiling.
-  const earlyCap = spacingDays; // max early-pull for spacing (beyond forced min compression)
+  // 2) Assign removal days, latest-first (ALAP), under TWO spreading forces:
+  //
+  //    (a) TARGET cadence for breathing room, with the early-pull *for spacing*
+  //        capped at one interval so a far-future cluster can't chain the full
+  //        target spacing backward and yank near-term engines dozens of weeks
+  //        early (the old "80 bunched, 74-weeks-early" artifact). An engine sits
+  //        at its own ceiling unless a *nearby* neighbor forces it in.
+  //
+  //    (b) SPARE THROUGHPUT. The serviceable-spare balance equals
+  //        startSpares − (removals in the trailing shop-turn window), because a
+  //        removed engine only returns as a spare after the shop TAT. So no
+  //        rolling TAT-length window may hold more than `maxPerWindow` removals
+  //        or the balance drops below MIN_REQUIRED_SPARES ("no serviceable
+  //        spare — not viable"). If placing an engine would overfill its window,
+  //        pull it EARLIER — into the idle months ahead of the cluster — just
+  //        enough to stay within capacity. This spends idle spare capacity to
+  //        de-congest a cluster (start it sooner) instead of bunching it against
+  //        the due dates and sinking the balance negative.
+  //
+  //    No engine is ever placed after its ceiling, and each is pulled only as
+  //    early as (a) and (b) require.
+  const earlyCap = spacingDays; // max early-pull for spacing (capacity may pull further)
+  const maxPerWindow = Math.max(params.startSpares - MIN_REQUIRED_SPARES, 1);
+  const capWindowDays = tat + 7; // rolling shop-turn window (+1 wk for the Monday return snap)
+  const countInWindow = (
+    arr: number[],
+    from: number,
+    to: number,
+    lo: number,
+    hi: number,
+  ): number => {
+    let n = 0;
+    for (let j = from; j < to; j++) if (arr[j] >= lo && arr[j] < hi) n++;
+    return n;
+  };
   const removalDays = new Array<number>(candidates.length);
   for (let i = candidates.length - 1; i >= 0; i--) {
     const ceil = ceilingDays[i];
+    let day: number;
     if (i === candidates.length - 1) {
-      removalDays[i] = ceil;
-      continue;
+      day = ceil;
+    } else {
+      const next = removalDays[i + 1];
+      const targetPos = Math.min(ceil, next - spacingDays); // where target spacing wants it
+      const earlyFloor = ceil - earlyCap; // don't pull more than one interval early for spacing
+      day = Math.max(targetPos, earlyFloor); // cap the spacing-driven early pull
+      day = Math.min(day, next - MIN_SPACING_DAYS); // hard 1-week floor (mandatory compression)
     }
-    const next = removalDays[i + 1];
-    const targetPos = Math.min(ceil, next - spacingDays); // where target spacing wants it
-    const earlyFloor = ceil - earlyCap; // don't pull more than one interval early for spacing
-    let day = Math.max(targetPos, earlyFloor); // cap the spacing-driven early pull
-    day = Math.min(day, next - MIN_SPACING_DAYS); // hard 1-week floor (mandatory compression)
+    // Spare-throughput de-congestion: while this engine's forward shop-turn
+    // window already holds the most removals the spare pool can support, pull it
+    // one week earlier — into the idle runway ahead of the cluster.
+    let guard = 0;
+    while (
+      countInWindow(
+        removalDays,
+        i + 1,
+        candidates.length,
+        day,
+        day + capWindowDays,
+      ) >= maxPerWindow &&
+      guard++ < 2000
+    ) {
+      day -= MIN_SPACING_DAYS;
+    }
     removalDays[i] = day;
   }
 

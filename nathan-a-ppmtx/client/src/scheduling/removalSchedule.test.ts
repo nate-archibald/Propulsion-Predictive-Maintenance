@@ -128,6 +128,27 @@ describe("buildRemovalPlan — force removals before limit", () => {
 });
 
 
+describe("buildRemovalPlan — spare-aware smoothing", () => {
+  it("spreads a cluster into the idle runway so spares never go negative", () => {
+    // 10 engines all due within ~90 days (days 300–390). With 5 spares and a
+    // 90-day shop TAT the pool can only support ~4 removals per shop-turn
+    // window, so bunching them against their due dates would sink the balance
+    // well below 1 ("not viable"). There is ample idle runway before the
+    // cluster, so the scheduler should start it sooner and keep it feasible.
+    const cluster: HsrEngine[] = [];
+    for (let i = 0; i < 10; i++) {
+      cluster.push(engine(`ESN-${400 + i}`, `N${400 + i}`, 3000 + i * 100));
+    }
+    const plan = buildRemovalPlan(cluster, BASE);
+    expect(plan.rows).toHaveLength(10);
+    expect(plan.feasible).toBe(true);
+    const minSpares = Math.min(...plan.balanceSeries.map((b) => b.spares));
+    expect(minSpares).toBeGreaterThanOrEqual(1);
+    // Every engine is still removed on/before its due date (never past the limit).
+    expect(plan.rows.every((r) => r.weeksEarly >= 0)).toBe(true);
+  });
+});
+
 describe("buildRemovalPlan — a far-future cluster does not yank engines early", () => {
   it("schedules every engine near its own due date, not dozens of weeks early", () => {
     // 80 engines all due far out (~1,120–1,910 days), 10 days apart. The old
@@ -139,7 +160,11 @@ describe("buildRemovalPlan — a far-future cluster does not yank engines early"
     for (let i = 0; i < 80; i++) {
       cluster.push(engine(`ESN-${300 + i}`, `N${300 + i}`, 11_200 + i * 100));
     }
-    const plan = buildRemovalPlan(cluster, { ...BASE, horizonMonths: 72 });
+    const plan = buildRemovalPlan(cluster, {
+      ...BASE,
+      horizonMonths: 72,
+      startSpares: 60, // isolate the target-spacing cascade from the spare-throughput limit
+    });
     expect(plan.rows).toHaveLength(80);
     // No engine is pulled more than ~one target interval (3 wk) early — the old
     // bug produced 74+ week early pulls.
