@@ -43,6 +43,9 @@ const DEFAULT_FC_PER_DAY = 6.0;
 const DEFAULT_TAT_DAYS = 95; // shop turnaround (removal → back as spare)
 const DEFAULT_SPACING_WEEKS = 3; // preferred cadence (future variability lever)
 const DEFAULT_HORIZON_MONTHS = 24;
+const DEFAULT_PRINT_HORIZON_MONTHS = 24; // only print the near-term window
+const DEFAULT_MIN_HRS_AT_REMOVAL = 250; // flag removals landing under this HSR buffer
+const DEFAULT_MIN_CYC_AT_REMOVAL = 250; // flag removals landing under this LLP buffer
 
 // The full, snapshot-able state of the plan: the numeric assumption levers plus
 // the chat-authored constraints. Saving / undo / restore all operate on this.
@@ -52,6 +55,9 @@ interface PlanConfig {
   tatDays: number;
   spacingWeeks: number;
   horizonMonths: number;
+  printHorizonMonths: number;
+  minHrsAtRemoval: number;
+  minCycAtRemoval: number;
   spareOverride: number | null;
   constraints: PlanConstraints;
 }
@@ -62,6 +68,9 @@ const DEFAULT_CONFIG: PlanConfig = {
   tatDays: DEFAULT_TAT_DAYS,
   spacingWeeks: DEFAULT_SPACING_WEEKS,
   horizonMonths: DEFAULT_HORIZON_MONTHS,
+  printHorizonMonths: DEFAULT_PRINT_HORIZON_MONTHS,
+  minHrsAtRemoval: DEFAULT_MIN_HRS_AT_REMOVAL,
+  minCycAtRemoval: DEFAULT_MIN_CYC_AT_REMOVAL,
   spareOverride: null,
   constraints: {},
 };
@@ -402,6 +411,16 @@ export default function RemovalPlanPage() {
   const asOf = data.find((r) => r.asOfDate)?.asOfDate ?? "";
   const nextRemoval = plan.rows[0]?.removalDate ?? "—";
 
+  // Print Horizon: the full plan is modeled out over `horizonMonths`, but the
+  // printed sheet is trimmed to the near-term window. Rows whose Monday falls
+  // after this cutoff get `print:hidden` so they stay on screen but drop off the
+  // printout.
+  const printCutoffIso = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + Math.max(config.printHorizonMonths, 1));
+    return d.toISOString().slice(0, 10);
+  }, [config.printHorizonMonths]);
+
   return (
     <div className="space-y-4 print:space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -488,6 +507,24 @@ export default function RemovalPlanPage() {
             value={config.horizonMonths}
             onChange={(n) => setField({ horizonMonths: n })}
             suffix="mo"
+          />
+          <NumField
+            label="Print Horizon"
+            value={config.printHorizonMonths}
+            onChange={(n) => setField({ printHorizonMonths: Math.max(Math.round(n), 1) })}
+            suffix="mo"
+          />
+          <NumField
+            label="Min Hrs at Removal"
+            value={config.minHrsAtRemoval}
+            onChange={(n) => setField({ minHrsAtRemoval: Math.max(n, 0) })}
+            suffix="hr"
+          />
+          <NumField
+            label="Min Cyc at Removal"
+            value={config.minCycAtRemoval}
+            onChange={(n) => setField({ minCycAtRemoval: Math.max(n, 0) })}
+            suffix="cyc"
           />
           <NumField
             label="Spares @ start"
@@ -644,6 +681,8 @@ export default function RemovalPlanPage() {
                       <tr
                         key={w.weekDate}
                         className={`border-b last:border-0 ${
+                          w.weekDate > printCutoffIso ? "print:hidden " : ""
+                        }${
                           r
                             ? !r.feasible
                               ? "bg-[var(--destructive)]/10"
@@ -742,7 +781,10 @@ export default function RemovalPlanPage() {
                             <>
                               <span
                                 className={
-                                  r.limitingRemainingAtRemoval < 0
+                                  r.limitingRemainingAtRemoval <
+                                  (r.limitingUnit === "hr"
+                                    ? config.minHrsAtRemoval
+                                    : config.minCycAtRemoval)
                                     ? "font-semibold text-red-600"
                                     : ""
                                 }
