@@ -23,9 +23,12 @@ import {
   Info,
   MessageSquare,
   Package,
+  PackagePlus,
+  Plus,
   Printer,
   Wrench,
   MapPin,
+  X,
 } from "lucide-react";
 import type { HsrEngine } from "../mock-data";
 import { useLakebaseData, ConnectionStatus } from "../useLakebaseData";
@@ -49,6 +52,12 @@ const DEFAULT_MIN_CYC_AT_REMOVAL = 250; // flag removals landing under this LLP 
 
 // The full, snapshot-able state of the plan: the numeric assumption levers plus
 // the chat-authored constraints. Saving / undo / restore all operate on this.
+interface IncomingSpare {
+  id: string; // stable key (for edits / drag)
+  esn: string; // serial of the inbound engine ("908XXX" until assigned)
+  arrivalDate: string; // ISO Monday the spare joins the serviceable pool
+}
+
 interface PlanConfig {
   fhPerDay: number;
   fcPerDay: number;
@@ -60,6 +69,7 @@ interface PlanConfig {
   minCycAtRemoval: number;
   forceBeforeLimit: boolean;
   spareOverride: number | null;
+  incomingSpares: IncomingSpare[];
   constraints: PlanConstraints;
 }
 
@@ -74,6 +84,11 @@ const DEFAULT_CONFIG: PlanConfig = {
   minCycAtRemoval: DEFAULT_MIN_CYC_AT_REMOVAL,
   forceBeforeLimit: true,
   spareOverride: null,
+  // Known inbound spare delivery — slated for the week of 2027-01-18 (subject to
+  // change; drag it between weeks on the timeline or edit the date below).
+  incomingSpares: [
+    { id: "incoming-1", esn: "908XXX", arrivalDate: "2027-01-18" },
+  ],
   constraints: {},
 };
 
@@ -329,23 +344,33 @@ export default function RemovalPlanPage() {
     commit({ ...config, constraints: nextConstraints, spacingWeeks: nextSpacing });
   };
 
-  // Handle drag-and-drop reordering — pin the dropped engine to the first available Monday.
-  const handleDragReorder = (draggedEngineSN: string) => {
-    // Create a pin to the first removal Monday in the schedule
-    if (plan.rows.length > 0) {
-      const firstMondayToPin = plan.rows[0]?.removalDate || new Date().toISOString().slice(0, 10);
-      const pin: RemovalPin = { engineSN: draggedEngineSN, monday: firstMondayToPin };
-      
-      const nextConstraints: PlanConstraints = { ...config.constraints };
-      nextConstraints.pins = [...(nextConstraints.pins ?? []), pin];
-      
-      commit({ ...config, constraints: nextConstraints });
-      setMessages((m) => [...m, {
+  // Drag-and-drop a removal onto a specific week — an "acute" single-week move.
+  // The engine is pinned to the exact Monday it was dropped on (NOT the top of
+  // the list), replacing any earlier pin for that same engine so repeated drags
+  // don't accumulate stale pins.
+  const handleDragReorder = (draggedEngineSN: string, targetMonday: string) => {
+    if (!targetMonday) return;
+    const row = plan.rows.find((r) => r.engineSN === draggedEngineSN);
+    // Dropped on its own current week — nothing to do.
+    if (row && row.removalDate === targetMonday) return;
+
+    const pin: RemovalPin = { engineSN: draggedEngineSN, monday: targetMonday };
+    const others = (config.constraints.pins ?? []).filter(
+      (p) => p.engineSN !== draggedEngineSN,
+    );
+    const nextConstraints: PlanConstraints = {
+      ...config.constraints,
+      pins: [...others, pin],
+    };
+    commit({ ...config, constraints: nextConstraints });
+    setMessages((m) => [
+      ...m,
+      {
         role: "system",
-        text: `Engine ${draggedEngineSN} moved to top of removal list (${firstMondayToPin}).`,
+        text: `Engine ${draggedEngineSN} pinned to the week of ${targetMonday}.`,
         ok: true,
-      }]);
-    }
+      },
+    ]);
   };
 
   // Move a removal up/down by one position via reordering constraint.
@@ -371,6 +396,69 @@ export default function RemovalPlanPage() {
       commit({ ...config, constraints: nextConstraints });
     }
   };
+
+  // ─── Incoming spare deliveries ───────────────────────────────────────
+  // Snap any user-chosen date to the Monday on/after it, so a delivery always
+  // lands on a timeline week (matching the scheduler's arrival rule).
+  const toMondayIso = (isoStr: string): string => {
+    const [y, m, d] = isoStr.split("-").map((n) => parseInt(n, 10));
+    const dt = new Date(y, (m || 1) - 1, d || 1);
+    const untilMonday = (8 - dt.getDay()) % 7; // 0 when already Monday
+    dt.setDate(dt.getDate() + untilMonday);
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${dt.getFullYear()}-${mm}-${dd}`;
+  };
+
+  const handleMoveIncoming = (id: string, mondayIso: string) => {
+    const moved = config.incomingSpares.find((s) => s.id === id);
+    commit({
+      ...config,
+      incomingSpares: config.incomingSpares.map((s) =>
+        s.id === id ? { ...s, arrivalDate: mondayIso } : s,
+      ),
+    });
+    if (moved)
+      setMessages((m) => [
+        ...m,
+        {
+          role: "system",
+          text: `Incoming spare ${moved.esn || "engine"} moved to the week of ${mondayIso}.`,
+          ok: true,
+        },
+      ]);
+  };
+
+  const handleSetIncomingDate = (id: string, rawIso: string) => {
+    if (rawIso) handleMoveIncoming(id, toMondayIso(rawIso));
+  };
+
+  // ESN is a quick label edit — a live lever, not an undo-tracked change.
+  const handleSetIncomingEsn = (id: string, esn: string) =>
+    setField({
+      incomingSpares: config.incomingSpares.map((s) =>
+        s.id === id ? { ...s, esn } : s,
+      ),
+    });
+
+  const handleAddIncoming = () => {
+    const base = plan.rows.length
+      ? plan.rows[plan.rows.length - 1].removalDate
+      : new Date().toISOString().slice(0, 10);
+    commit({
+      ...config,
+      incomingSpares: [
+        ...config.incomingSpares,
+        { id: `incoming-${Date.now()}`, esn: "908XXX", arrivalDate: toMondayIso(base) },
+      ],
+    });
+  };
+
+  const handleRemoveIncoming = (id: string) =>
+    commit({
+      ...config,
+      incomingSpares: config.incomingSpares.filter((s) => s.id !== id),
+    });
 
   // Normalize a raw engine position to the "#1" (left) / "#2" (right) label.
   // Source data can arrive as "ENG-1"/"ENG-2" (normalized by the server), the
@@ -408,6 +496,10 @@ export default function RemovalPlanPage() {
               ...(liveSpares.repairEsns ?? []),
             ]
           : undefined,
+        incomingSpares: config.incomingSpares.map((s) => ({
+          esn: s.esn || "Incoming",
+          availDate: s.arrivalDate,
+        })),
         constraints: config.constraints,
       }),
     [data, config, startSpares, liveSpares],
@@ -572,6 +664,55 @@ export default function RemovalPlanPage() {
             value={startSpares}
             onChange={(n) => setField({ spareOverride: Math.round(n) })}
           />
+          {/* Incoming spare deliveries — editable here, draggable on the timeline */}
+          <div className="flex w-full flex-col gap-1.5 border-t pt-2 mt-1">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <PackagePlus className="h-3.5 w-3.5" />
+              Incoming spare deliveries
+            </div>
+            {config.incomingSpares.length === 0 && (
+              <span className="text-xs text-muted-foreground">
+                None scheduled.
+              </span>
+            )}
+            {config.incomingSpares.map((s) => (
+              <div key={s.id} className="flex flex-wrap items-center gap-1.5 text-xs">
+                <Input
+                  value={s.esn}
+                  onChange={(e) => handleSetIncomingEsn(s.id, e.target.value)}
+                  className="w-28"
+                  aria-label="Incoming spare ESN"
+                  placeholder="ESN"
+                />
+                <span className="text-muted-foreground">arrives</span>
+                <Input
+                  type="date"
+                  value={s.arrivalDate}
+                  onChange={(e) => handleSetIncomingDate(s.id, e.target.value)}
+                  className="w-36 tabular-nums"
+                  aria-label="Incoming spare arrival date"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={() => handleRemoveIncoming(s.id)}
+                  aria-label="Remove incoming spare"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 w-fit gap-1 px-2 text-xs"
+              onClick={handleAddIncoming}
+            >
+              <Plus className="h-3 w-3" />
+              Add delivery
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -602,7 +743,7 @@ export default function RemovalPlanPage() {
                     <li><span className="font-medium">Cap per month</span> — e.g. "at most one removal per month"</li>
                     <li><span className="font-medium">Set an hours floor</span> — e.g. "keep at least 1,000 remaining hours on the limit" (pulls engines earlier so none is run below that margin)</li>
                     <li><span className="font-medium">Reorder</span> — e.g. "remove ESN 12345 first" or use the up/down arrow buttons on each row</li>
-                    <li><span className="font-medium">Drag-and-drop</span> — Drag an engine row to move it to the top of the removal list</li>
+                    <li><span className="font-medium">Drag-and-drop</span> — Drag an engine row onto any week to pin that removal to the exact week you drop it on; drag the incoming-spare chip to reschedule a delivery</li>
                     <li><span className="font-medium">Clear</span> — e.g. "clear all constraints"</li>
                   </ul>
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -738,16 +879,24 @@ export default function RemovalPlanPage() {
                           }
                         }}
                         onDragOver={(e) => {
-                          if (r) {
-                            e.preventDefault();
-                            e.dataTransfer.dropEffect = "move";
-                          }
+                          // Any week is a valid drop target for an incoming spare;
+                          // engine rows also accept a dragged removal (reorder).
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
                         }}
                         onDrop={(e) => {
                           e.preventDefault();
+                          const incomingId = e.dataTransfer.getData("incomingSpareId");
+                          if (incomingId) {
+                            handleMoveIncoming(incomingId, w.weekDate);
+                            return;
+                          }
                           const draggedSN = e.dataTransfer.getData("engineSN");
-                          if (draggedSN && r && draggedSN !== r.engineSN) {
-                            handleDragReorder(draggedSN);
+                          // Pin the dragged engine to THIS week (the exact drop
+                          // target) — works whether or not the week already has a
+                          // removal, enabling precise single-week adjustments.
+                          if (draggedSN && draggedSN !== r?.engineSN) {
+                            handleDragReorder(draggedSN, w.weekDate);
                           }
                         }}
                       >
@@ -892,17 +1041,34 @@ export default function RemovalPlanPage() {
                           )}
                         </td>
                         <td className="py-2 pr-3 text-xs text-muted-foreground">
-                          {r?.issue ? (
-                            <span className="text-[var(--destructive)]">
-                              {r.issue}
-                            </span>
-                          ) : hasReturn ? (
-                            <span className="text-emerald-600">
-                              +{w.returnedEsns.join(", ")} back from shop
-                            </span>
-                          ) : (
-                            ""
-                          )}
+                          <div className="flex flex-col gap-1">
+                            {r?.issue ? (
+                              <span className="text-[var(--destructive)]">
+                                {r.issue}
+                              </span>
+                            ) : hasReturn ? (
+                              <span className="text-emerald-600">
+                                +{w.returnedEsns.join(", ")} back from shop
+                              </span>
+                            ) : null}
+                            {config.incomingSpares
+                              .filter((s) => s.arrivalDate === w.weekDate)
+                              .map((s) => (
+                                <span
+                                  key={s.id}
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.effectAllowed = "move";
+                                    e.dataTransfer.setData("incomingSpareId", s.id);
+                                  }}
+                                  className="inline-flex w-fit cursor-move items-center gap-1 rounded bg-sky-500/15 px-1.5 py-0.5 font-medium text-sky-700 print:cursor-default"
+                                  title="Drag to another week to reschedule this delivery"
+                                >
+                                  <PackagePlus className="h-3.5 w-3.5" />
+                                  +{s.esn || "spare"} delivered
+                                </span>
+                              ))}
+                          </div>
                         </td>
                       </tr>
                     );

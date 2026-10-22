@@ -287,3 +287,62 @@ describe("buildRemovalPlan — per-month cap", () => {
     for (const c of counts.values()) expect(c).toBeLessThanOrEqual(1);
   });
 });
+
+describe("buildRemovalPlan — incoming spare deliveries", () => {
+  it("bumps the serviceable balance by +1 on the delivery week", () => {
+    const plan = buildRemovalPlan(ENGINES, {
+      ...BASE,
+      startSpares: 2,
+      incomingSpares: [{ esn: "908XXX", availDate: "2027-01-18" }],
+    });
+    // The balance series must reach startSpares + deliveries at some point, and
+    // the delivery contributes a +1 step (returns also +1, so assert the peak
+    // exceeds the no-delivery peak by at least one).
+    const withPeak = Math.max(...plan.balanceSeries.map((b) => b.spares));
+    const without = buildRemovalPlan(ENGINES, { ...BASE, startSpares: 2 });
+    const withoutPeak = Math.max(...without.balanceSeries.map((b) => b.spares));
+    expect(withPeak).toBeGreaterThanOrEqual(withoutPeak + 1);
+  });
+
+  it("surfaces the delivery on the weekly timeline in its arrival week", () => {
+    const plan = buildRemovalPlan(ENGINES, {
+      ...BASE,
+      incomingSpares: [{ esn: "908XXX", availDate: "2027-01-18" }],
+    });
+    const arrivalWeek = plan.weeks.find((w) => w.incomingEsns.includes("908XXX"));
+    expect(arrivalWeek).toBeDefined();
+    // 2027-01-18 is a Monday, so the delivery lands on exactly that week.
+    expect(arrivalWeek?.weekDate).toBe("2027-01-18");
+    // Every week carries the (possibly empty) incomingEsns array.
+    expect(plan.weeks.every((w) => Array.isArray(w.incomingEsns))).toBe(true);
+  });
+
+  it("lets a removal after the arrival draw on the delivered spare (restores feasibility)", () => {
+    // 6 engines due tightly, only ONE starting spare and a long TAT → the pool
+    // runs dry and the plan is infeasible. A delivery mid-run gives a later
+    // removal a spare to install, lifting the shortfall for those weeks.
+    const fleet: HsrEngine[] = [];
+    for (let i = 0; i < 6; i++) {
+      fleet.push(engine(`ESN-${700 + i}`, `N${700 + i}`, 1000 + i * 200));
+    }
+    const base = { ...BASE, startSpares: 1, tatDays: 200, spacingWeeks: 1 };
+    const dry = buildRemovalPlan(fleet, base);
+    const fed = buildRemovalPlan(fleet, {
+      ...base,
+      incomingSpares: [{ esn: "908XXX", availDate: "2027-02-01" }],
+    });
+    // The delivery supplies at least one more "ESN on" assignment than the dry run.
+    const assigned = (p: ReturnType<typeof buildRemovalPlan>) =>
+      p.rows.filter((r) => r.esnGoingOn !== "").length;
+    expect(assigned(fed)).toBeGreaterThan(assigned(dry));
+  });
+
+  it("is a no-op when no deliveries are supplied", () => {
+    const withEmpty = buildRemovalPlan(ENGINES, { ...BASE, incomingSpares: [] });
+    const without = buildRemovalPlan(ENGINES, BASE);
+    expect(withEmpty.balanceSeries).toEqual(without.balanceSeries);
+    expect(withEmpty.weeks.map((w) => w.sparesAtQx)).toEqual(
+      without.weeks.map((w) => w.sparesAtQx),
+    );
+  });
+});

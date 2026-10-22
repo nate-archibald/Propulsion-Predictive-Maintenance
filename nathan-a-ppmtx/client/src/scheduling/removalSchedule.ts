@@ -80,6 +80,12 @@ export interface PlanParams {
   horizonMonths: number; // planning window
   startSpares: number; // serviceable spare engines today
   startSpareEsns?: string[]; // their ESNs (for the "ESN going on" column)
+  // Future spare deliveries: engines that join the serviceable pool on a known
+  // arrival date (e.g. a new spare slated for late Jan 2027). Each becomes a
+  // FIFO-assignable spare and bumps the running balance from its arrival week —
+  // exactly like a shop return, just with no prior removal. `availDate` is ISO
+  // (snapped to the Monday on/after arrival, mirroring the shop-return rule).
+  incomingSpares?: { esn: string; availDate: string }[];
   constraints?: PlanConstraints; // chat-authored overrides (optional)
   // When true, every engine's scheduling ceiling is tightened to its due date
   // minus the at-removal buffer (below), and the cadence is allowed to compress
@@ -123,6 +129,7 @@ export interface WeekRow {
   sparesAtQx: number; // serviceable-spare balance at the end of this week
   removal?: PlanRow; // the removal happening this week (if any)
   returnedEsns: string[]; // engines that came back from the shop this week
+  incomingEsns: string[]; // newly-delivered spare engines that arrived this week
 }
 
 export interface PlanResult {
@@ -539,6 +546,21 @@ export function buildRemovalPlan(
     sparePool.push({ esn: esns[k] ?? `SPARE-${k + 1}`, availDay: -Infinity });
   }
 
+  // Future spare deliveries join the pool on the Monday on/after their arrival
+  // (same usability rule as a shop return). From that day a removal can draw on
+  // them via the normal FIFO pick below, and the balance series / weekly count
+  // reflect the +1 — no special-casing beyond seeding the pool with a positive
+  // availDay instead of -Infinity.
+  const incomingDays = (params.incomingSpares ?? []).map((s) => ({
+    esn: s.esn || "Incoming",
+    availDay:
+      (mondayOnOrAfter(parseIso(s.availDate)).getTime() - today.getTime()) /
+      DAY_MS,
+  }));
+  for (const s of incomingDays) {
+    sparePool.push({ esn: s.esn, availDay: s.availDay });
+  }
+
   const issues: string[] = [];
   let firstIssueDate: string | null = null;
 
@@ -661,6 +683,10 @@ export function buildRemovalPlan(
     events.push({ day: rDay, delta: -1 });
     events.push({ day: retDay, delta: +1 });
   }
+  // Incoming spare deliveries add +1 to the serviceable balance on arrival.
+  for (const s of incomingDays) {
+    events.push({ day: s.availDay, delta: +1 });
+  }
   // Returns before removals when they fall on the same day (a freed spare is
   // usable that day).
   events.sort((a, b) => a.day - b.day || b.delta - a.delta);
@@ -682,7 +708,7 @@ export function buildRemovalPlan(
   //    through the last shop return, so the cadence (spaced-out removals) and
   //    every change in the serviceable-spare count are visible at a glance.
   const weeks: WeekRow[] = [];
-  if (candidates.length > 0) {
+  if (candidates.length > 0 || incomingDays.length > 0) {
     const removalAbs = removalDates.map(
       (d) => (d.getTime() - today.getTime()) / DAY_MS,
     );
@@ -692,10 +718,16 @@ export function buildRemovalPlan(
       (d) =>
         (mondayOnOrAfter(addDays(d, tat)).getTime() - today.getTime()) / DAY_MS,
     );
-    const firstWeekMonday = startOfDay(
-      new Date(Math.min(...removalDates.map((d) => d.getTime()))),
-    );
-    const lastDay = Math.max(...returnAbs);
+    const incomingAbs = incomingDays.map((s) => s.availDay);
+    // The timeline spans from the earliest of (first removal, first delivery)
+    // through the latest of (last shop return, last delivery), so an incoming
+    // spare always gets a week row even if it lands outside the removal cluster.
+    const startTimes = [
+      ...removalDates.map((d) => d.getTime()),
+      ...incomingAbs.map((d) => addDays(today, d).getTime()),
+    ];
+    const firstWeekMonday = startOfDay(new Date(Math.min(...startTimes)));
+    const lastDay = Math.max(0, ...returnAbs, ...incomingAbs);
     for (
       let wk = firstWeekMonday;
       (wk.getTime() - today.getTime()) / DAY_MS <= lastDay;
@@ -708,13 +740,19 @@ export function buildRemovalPlan(
       const returnedEsns = candidates
         .filter((_, i) => returnAbs[i] >= weekStart && returnAbs[i] < weekEnd)
         .map((c) => c.e.engineSN);
+      const incomingEsns = incomingDays
+        .filter((s) => s.availDay >= weekStart && s.availDay < weekEnd)
+        .map((s) => s.esn);
       const removalsSoFar = removalAbs.filter((d) => d < weekEnd).length;
       const returnsSoFar = returnAbs.filter((d) => d < weekEnd).length;
+      const incomingSoFar = incomingAbs.filter((d) => d < weekEnd).length;
       weeks.push({
         weekDate: wkIso,
-        sparesAtQx: params.startSpares - removalsSoFar + returnsSoFar,
+        sparesAtQx:
+          params.startSpares - removalsSoFar + returnsSoFar + incomingSoFar,
         removal: ri >= 0 ? rows[ri] : undefined,
         returnedEsns,
+        incomingEsns,
       });
     }
   }
