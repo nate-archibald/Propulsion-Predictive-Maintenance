@@ -117,7 +117,7 @@ export const MOCK_CANCEL_DETAILS: Row[] = [
 
 export const MOCK_KPIS: Row = {
   activeDefects: MOCK_DEFECTS.filter((d) => d.impact !== "NONE").length,
-  llpAlerts: MOCK_PARTS.filter((p) => p.isLLP && typeof p.cyclesRemaining === "number" && (p.cyclesRemaining as number) < 1000).length,
+  llpAlerts: MOCK_PARTS.filter((p) => p.isLLP && typeof p.cyclesRemaining === "number" && (p.cyclesRemaining) < 1000).length,
   totalDelayMinutes: MOCK_DEFECTS.reduce((s, d) => s + (Number(d.delayMinutes) || 0), 0),
   cancelCount: MOCK_DEFECTS.filter((d) => d.impact === "CANCEL").length,
   totalDefects: MOCK_DEFECTS.length,
