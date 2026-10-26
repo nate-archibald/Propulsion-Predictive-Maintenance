@@ -45,7 +45,18 @@ const DEFAULT_FH_PER_DAY = 7.5;
 const DEFAULT_FC_PER_DAY = 6.0;
 const DEFAULT_TAT_DAYS = 95; // shop turnaround (removal → back as spare)
 const DEFAULT_SPACING_WEEKS = 3; // preferred cadence (future variability lever)
-const DEFAULT_HORIZON_MONTHS = 24;
+// Planning window runs to a fixed program-end date (Dec 30, 2038). The scheduler
+// measures the horizon as `months × 30.4375 days` from today, so we compute the
+// month count the same way and round up to ensure the target date is reached.
+// Computed at load so the window stays anchored to the target date over time.
+const HORIZON_TARGET_DATE = new Date(2038, 11, 30); // Dec 30, 2038 (month is 0-based)
+const AVG_DAYS_PER_MONTH = 30.4375; // matches buildRemovalPlan's month→day conversion
+const DEFAULT_HORIZON_MONTHS = Math.max(
+  Math.ceil(
+    (HORIZON_TARGET_DATE.getTime() - Date.now()) / (AVG_DAYS_PER_MONTH * 86_400_000),
+  ),
+  1,
+);
 const DEFAULT_PRINT_HORIZON_MONTHS = 24; // only print the near-term window
 const DEFAULT_MIN_HRS_AT_REMOVAL = 250; // flag removals landing under this HSR buffer
 const DEFAULT_MIN_CYC_AT_REMOVAL = 250; // flag removals landing under this LLP buffer
