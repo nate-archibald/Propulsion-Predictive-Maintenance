@@ -83,6 +83,10 @@ client/dist/
 client/node_modules/
 node_modules/
 
+# The generic Python `lib/` rule above unintentionally ignores the React app's
+# real source directory. Re-include it so its source files are tracked.
+!nathan-a-ppmtx/client/src/lib/
+
 # Test output
 .pytest_cache/
 .coverage
