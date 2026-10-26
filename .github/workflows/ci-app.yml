@@ -1,0 +1,86 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Continuous Integration for the Databricks App: nathan-a-ppmtx
+#
+# This is a CI-ONLY pipeline. It proves the code is correct (lint, types,
+# unit tests, build) on every push and pull request. It does NOT deploy —
+# deployment to Test/QA/Prod is handled by the Azure DevOps DAB pipeline
+# (.azuredevops/ado-dab-deployment.template.yml).
+# ─────────────────────────────────────────────────────────────────────────────
+name: CI - nathan-a-ppmtx app
+
+# ---- Triggers: what makes this pipeline run --------------------------------
+on:
+  push:
+    branches: [main]
+    paths:                      # only run when the app (or this file) changes
+      - 'nathan-a-ppmtx/**'
+      - '.github/workflows/ci-app.yml'
+  pull_request:
+    paths:
+      - 'nathan-a-ppmtx/**'
+      - '.github/workflows/ci-app.yml'
+
+# If you push again before a run finishes, cancel the older run for this branch.
+concurrency:
+  group: ci-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: nathan-a-ppmtx   # all steps run inside the app folder
+
+    steps:
+      # 1. Pull the repository code onto the runner.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Install Node. Version matches local dev (@types/node 24). npm cache
+      #    speeds up installs by reusing downloaded packages between runs.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: nathan-a-ppmtx/package-lock.json
+
+      # 3. Clean, reproducible install from package-lock.json.
+      #    postinstall runs `appkit generate-types`, which exits cleanly without
+      #    Databricks auth (it just skips query-type generation).
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. Lint — currently NON-BLOCKING. The codebase has pre-existing lint
+      #    errors; failing here would make every run red. Remove
+      #    `continue-on-error` once lint is clean to make it a hard gate.
+      - name: Lint (non-blocking)
+        run: npm run lint
+        continue-on-error: true
+
+      # 5. Type safety — a hard gate. Compilation errors stop the pipeline.
+      - name: Typecheck
+        run: npm run typecheck
+
+      # 6. Unit tests (vitest only). We intentionally do NOT run `npm run test`,
+      #    because that also runs the Playwright smoke test, which boots the
+      #    live app (needs Databricks/Lakebase credentials) and can't run here.
+      - name: Unit tests
+        run: npx vitest run
+
+      # 7. Build both server and client bundles — proves the app is shippable.
+      - name: Build
+        run: npm run build
+
+      # 8. Keep the built client/server bundles for inspection/debugging.
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build
+          path: |
+            nathan-a-ppmtx/dist
+            nathan-a-ppmtx/client/dist
+          retention-days: 7
+          if-no-files-found: ignore
