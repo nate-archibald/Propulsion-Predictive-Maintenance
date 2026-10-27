@@ -1366,7 +1366,7 @@ await createApp({
                 AND snap.installed_ac IS NOT NULL
             ),
             engine_tsr AS (
-              SELECT ic.sn, d.calendar_date AS last_shop_visit
+              SELECT ic.sn, ic.actual_hours AS tsr_hours, d.calendar_date AS last_shop_visit
               FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
               JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
               JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON ic.reset_date_key = d.dim_date_key
@@ -1378,7 +1378,13 @@ await createApp({
               COALESCE(elt.live_tsn, t.total_hours)::integer AS total_hours,
               COALESCE(elt.live_tsc, t.total_cycles)::integer AS total_cycles,
               elt.as_of_date AS live_times_as_of,
-              tsr.last_shop_visit
+              tsr.last_shop_visit,
+              -- An engine that has never been to a shop visit never had its Time
+              -- Since Repair (TSR) reset, so TSR hours still equal Time Since New
+              -- (TSN). In that case last_shop_visit is just the in-service date and
+              -- must not be shown as a real shop visit. (TSO is not usable here — it
+              -- mirrors TSN for every engine in this dataset.)
+              (t.total_hours = tsr.tsr_hours) AS never_shopped
             FROM engine_tsn t
             LEFT JOIN engine_tsr tsr ON t.engine_sn = tsr.sn
             LEFT JOIN ${S}.qx_ppmtx_synced_gold_engine_live_times elt
@@ -1432,7 +1438,7 @@ await createApp({
                 AND snap.installed_ac IS NOT NULL
             ),
             apu_tsr AS (
-              SELECT ic.sn, d.calendar_date AS last_shop_visit
+              SELECT ic.sn, ic.actual_hours AS tsr_hours, d.calendar_date AS last_shop_visit
               FROM ${S}.qx_ppmtx_synced_gold_fact_inventory_control ic
               JOIN ${S}.qx_ppmtx_synced_gold_dim_part p ON ic.dim_part_key = p.dim_part_key
               JOIN ${S}.qx_ppmtx_synced_gold_dim_date d ON ic.reset_date_key = d.dim_date_key
@@ -1444,7 +1450,11 @@ await createApp({
               t.tail,
               t.total_hours::integer AS total_hours,
               t.total_cycles::integer AS total_cycles,
-              tsr.last_shop_visit
+              tsr.last_shop_visit,
+              -- Never been to a shop visit → TSR was never reset, so TSR hours still
+              -- equal Time Since New (TSN). last_shop_visit is then just the
+              -- in-service date and must not be shown as a real shop visit.
+              (t.total_hours = tsr.tsr_hours) AS never_shopped
             FROM apu_tsn t
             LEFT JOIN apu_tsr tsr ON t.apu_sn = tsr.sn
             WHERE t.rn = 1

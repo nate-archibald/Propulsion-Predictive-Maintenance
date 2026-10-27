@@ -58,6 +58,9 @@ export interface EngineConfig {
   totalHours: number;
   totalCycles: number;
   lastShopVisit: string;
+  // True when the engine has never been to a shop visit (TSN == TSR), so
+  // lastShopVisit is just the in-service date and must not be shown as a visit.
+  neverShopped?: boolean;
   parts: Part[];
   [key: string]: unknown;
 }
@@ -90,6 +93,9 @@ export interface APUConfig {
   totalHours: number;
   totalCycles: number;
   lastShopVisit: string;
+  // True when the APU has never been to a shop visit (TSN == TSR), so
+  // lastShopVisit is just the in-service date and must not be shown as a visit.
+  neverShopped?: boolean;
   parts: Part[];
   [key: string]: unknown;
 }

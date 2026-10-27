@@ -128,6 +128,7 @@ export function mapEngine(r: Row): Row {
     totalHours: num(r.total_hours),
     totalCycles: num(r.total_cycles),
     lastShopVisit: isoDate(r.last_shop_visit),
+    neverShopped: Boolean(r.never_shopped),
     parts: [],
   };
 }
@@ -174,6 +175,7 @@ export function mapAPU(r: Row): Row {
     totalHours: num(r.total_hours),
     totalCycles: num(r.total_cycles),
     lastShopVisit: isoDate(r.last_shop_visit),
+    neverShopped: Boolean(r.never_shopped),
     parts: [],
   };
 }

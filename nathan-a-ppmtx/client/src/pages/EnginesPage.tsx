@@ -456,7 +456,9 @@ export default function EnginesPage() {
                           </div>
                         </div>
                         <p className="text-muted-foreground">
-                          Last shop visit: {engine.lastShopVisit}
+                          {engine.neverShopped
+                            ? "Never shopped"
+                            : `Last shop visit: ${engine.lastShopVisit}`}
                         </p>
                       </CardContent>
                     </Card>
@@ -506,7 +508,9 @@ export default function EnginesPage() {
                           </div>
                         </div>
                         <p className="text-muted-foreground">
-                          Last shop visit: {apuItem.lastShopVisit}
+                          {apuItem.neverShopped
+                            ? "Never shopped"
+                            : `Last shop visit: ${apuItem.lastShopVisit}`}
                         </p>
                       </CardContent>
                     </Card>
@@ -542,7 +546,9 @@ export default function EnginesPage() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Last Shop Visit</p>
-                      <p className="font-medium">{selectedAPU.lastShopVisit}</p>
+                      <p className="font-medium">
+                        {selectedAPU.neverShopped ? "Never shopped" : selectedAPU.lastShopVisit}
+                      </p>
                     </div>
                   </div>
                   {selectedAPU.parts.length > 0 && (
